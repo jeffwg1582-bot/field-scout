@@ -7,6 +7,8 @@ export default async (req) => {
   let b;
   try { b = await req.json(); } catch (e) { return json({ error: 'bad json' }, 400); }
   const { image, mediaType = 'image/jpeg', note = '', scout = '', neighborhood = '', area = '' } = b;
+  const SCOUT_CODE = process.env.SCOUT_CODE || '';
+  if (SCOUT_CODE && (b.code || '') !== SCOUT_CODE) return json({ error: 'Wrong team code — ask the person who invited you.' }, 403);
   if (!image) return json({ error: 'no image' }, 400);
   if (!note.trim()) return json({ error: 'a note is required' }, 400);
 

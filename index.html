@@ -110,7 +110,7 @@ function renderScout(){
   $('#sub').textContent=geo.neighborhood?('📍 '+geo.neighborhood):'Snap & note';
   $('#tabbar').innerHTML='<button class="active" onclick="scoutTab(\'cap\')"><span class="ic">📸</span>Snap</button>'+
     '<button onclick="scoutTab(\'set\')"><span class="ic">⚙️</span>Setup</button>';
-  if(!scout){ $('#main').innerHTML='<div class="card"><p class="big">Your name</p><p class="muted">This tags every lead you send so you get credit.</p><label>Name</label><input id="scn" placeholder="First Last"><button class="btn" onclick="saveScout()">Save</button></div>'; return; }
+  if(!scout){ $('#main').innerHTML='<div class="card"><p class="big">Quick setup</p><p class="muted">One time. Your name gets you the credit; the team code is from whoever invited you.</p><label>Your name</label><input id="scn" placeholder="First Last"><label>Team code</label><input id="sccode" placeholder="ask the person who invited you" value="'+esc(LS.get('scoutcode',''))+'"><button class="btn" onclick="saveScout()">Save</button></div>'; return; }
   if(tab==='set'){ return scoutSetup(); }
   let h='<div class="card"><p class="big">Snap a lead, '+esc(scout.split(' ')[0])+'</p><p class="muted">Tap, then add a quick note on WHY you\'re reaching out (their truck, their shop, you use them). The note is required — it writes the email.</p>'+
     '<div class="snapbtn" onclick="document.getElementById(\'file\').click()" style="margin-top:12px"><span class="em">📷</span>Tap to snap</div>'+
@@ -126,10 +126,11 @@ function renderScout(){
   $('#file').addEventListener('change',onSnap);
 }
 function scoutTab(t){tab=t;renderScout();}
-function saveScout(){const v=$('#scn').value.trim();if(!v){toast('Enter your name');return}scout=v;LS.set('scout',v);renderScout();}
+function saveScout(){const v=$('#scn').value.trim();if(!v){toast('Enter your name');return}scout=v;LS.set('scout',v);LS.set('scoutcode',($('#sccode')&&$('#sccode').value||'').trim());renderScout();}
+function saveScoutSetup(){const v=($('#scn2').value||'').trim();if(v){scout=v;LS.set('scout',v);}LS.set('scoutcode',($('#sccode2')&&$('#sccode2').value||'').trim());toast('Saved');}
 function scoutSetup(){
-  $('#main').innerHTML='<div class="card"><p class="big">Setup</p><label>Your name (credit)</label><input id="scn2" value="'+esc(scout)+'">'+
-    '<button class="btn" onclick="(function(){var v=document.getElementById(\'scn2\').value.trim();if(v){scout=v;LS.set(\'scout\',v);toast(\'Saved\')}})()">Save name</button>'+
+  $('#main').innerHTML='<div class="card"><p class="big">Setup</p><label>Your name (credit)</label><input id="scn2" value="'+esc(scout)+'"><label>Team code</label><input id="sccode2" value="'+esc(LS.get('scoutcode',''))+'" placeholder="ask the person who invited you">'+
+    '<button class="btn" onclick="saveScoutSetup()">Save</button>'+
     '<button class="btn ghost" style="margin-top:14px" onclick="switchRole()">Switch role</button></div>';
 }
 async function onSnap(e){const files=[...e.target.files];e.target.value='';getLocation();for(const f of files){const img=await downscale(f);outbox.unshift({id:'O'+Date.now()+Math.random().toString(36).slice(2,6),img,mediaType:'image/jpeg',note:'',neighborhood:geo.neighborhood||'',area:geo.area||''});}saveOutbox();renderScout();toast('📸 '+files.length+' banked — add a note & send');}
@@ -140,7 +141,7 @@ async function sendOne(id){
   if(!o.note){toast('Add a note first');return}
   saveOutbox();toast('📤 Sending…');
   try{
-    const r=await fetch(API+'/process',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({image:o.img,mediaType:o.mediaType,note:o.note,scout,neighborhood:o.neighborhood,area:o.area})});
+    const r=await fetch(API+'/process',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({image:o.img,mediaType:o.mediaType,note:o.note,scout,code:LS.get('scoutcode',''),neighborhood:o.neighborhood,area:o.area})});
     const j=await r.json();
     if(!r.ok||j.error)throw new Error(j.error||'failed');
     outbox=outbox.filter(x=>x.id!==id);saveOutbox();
@@ -189,14 +190,20 @@ async function callRaw(body){if(!owner.anthropic)throw new Error('Add your Anthr
 const tOf=j=>(j.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('');
 function pJSON(t){try{return JSON.parse(t)}catch(e){}const m=t&&t.match(/\{[\s\S]*\}/);if(m){try{return JSON.parse(m[0])}catch(e){}}return null;}
 const VISION=`You are a field sales scout. Identify EVERY distinct business in the photo (a park/plaza sign may list several). Return ONLY JSON:{"businesses":[{"company":"exact name","trade":"industry","phone":"if visible else ''","website":"if visible else ''","services":["services"],"contact_title":"likely title, default 'Owner'","source_type":"work_vehicle|storefront|office|yard_sign|park_sign|product|other","signage_text":"other readable text","confidence":"high|medium|low"}]}Use '' for unreadable. Never invent phone/website.`;
-async function research(l){const prompt=`Find who to email at this small business so a rep can pitch PEO/HR to its OWNER. Open the WEBSITE first (Contact/About/Team), then the web.
+async function research(l){const prompt=`Research this business so a PEO/HR rep can (a) decide if it's a fit and (b) reach the right person. Open the WEBSITE first (Contact/About/Team), then the web (Google Business, directories, social, news).
 Business: ${l.company}
 ${l.website?'Website: '+l.website:''}
 ${l.area?'Location: '+l.area:''}
 ${l.phone?'Phone: '+l.phone:''}
-STRICT: owner's direct email if verifiable -> email_type "personal"; else general inbox -> "generic". contact_name only with real evidence, else EMPTY. NEVER invent. If nothing, empty.
-Return ONLY JSON:{"email":"","email_type":"personal|generic","contact_name":"","title":"","confidence":"high|medium|low","source":"url"}`;
-  try{const j=await callRaw({model:RESEARCH_MODEL,max_tokens:1024,tools:[{type:'web_search_20250305',name:'web_search',max_uses:3}],messages:[{role:'user',content:[{type:'text',text:prompt}]}]});const r=pJSON(tOf(j))||{};return{email:(r.email||'').trim(),email_type:(r.email_type||'').trim(),contact_name:(r.contact_name||'').trim(),contact_title:(r.title||'').trim()||l.contact_title,email_confidence:r.confidence||'',email_source:(r.source||'').trim()};}catch(e){return{email:''};}}
+${l.trade?'Trade: '+l.trade:''}
+TASK 1 — CONTACT: owner/decision-maker's DIRECT email if verifiable -> email_type "personal"; else a general inbox (info@/office@) -> "generic". contact_name + title ONLY with real evidence, else empty. NEVER invent an email or a name.
+TASK 2 — FIT PROFILE (PEO sweet spot = a U.S. small/mid business, ~5-100 W-2 employees, one or a few locations, a reachable owner). Judge from what you find:
+- scope: "local independent" | "regional" | "national chain" | "franchise" | "public company" | "nonprofit" | "government" | "unknown"
+- est_size: rough employee range if findable (e.g. "10-30"), else ""
+- peo_fit: "high" | "medium" | "low" | "none" (national chains, public companies, big-brand franchises, govt -> low/none)
+- fit_reason: one short phrase
+Return ONLY JSON:{"email":"","email_type":"personal|generic","contact_name":"","title":"","confidence":"high|medium|low","source":"url","scope":"","est_size":"","peo_fit":"","fit_reason":""}`;
+  try{const j=await callRaw({model:RESEARCH_MODEL,max_tokens:1400,tools:[{type:'web_search_20250305',name:'web_search',max_uses:3}],messages:[{role:'user',content:[{type:'text',text:prompt}]}]});const r=pJSON(tOf(j))||{};return{email:(r.email||'').trim(),email_type:(r.email_type||'').trim(),contact_name:(r.contact_name||'').trim(),contact_title:(r.title||'').trim()||l.contact_title,email_confidence:r.confidence||'',email_source:(r.source||'').trim(),scope:(r.scope||'').trim(),est_size:(r.est_size||'').trim(),peo_fit:(r.peo_fit||'').trim().toLowerCase(),fit_reason:(r.fit_reason||'').trim()};}catch(e){return{email:''};}}
 async function draft(l){const s=owner;const prompt=`Write a SHORT warm first-touch email from an outside rep.
 Me: ${s.name||'(rep)'}, ${s.title||''} at ${s.company||'My PEO Pros'}. We offer: ${s.offer||'PEO — payroll, benefits, HR & workers comp for small businesses'}.
 Prospect: ${l.company} (${l.trade||'local business'})${l.contact_name?', contact '+l.contact_name:''}.
@@ -224,12 +231,15 @@ async function processQueue(){
     }
   }finally{processing=false;if(tab==='rev')ownerReview();else renderOwner();}
 }
-async function genEmail(l){l.status='researching';saveLeads();if(tab==='rev')ownerReview();Object.assign(l,await research(l));l.research_tries=1;l.status='drafting';saveLeads();if(tab==='rev')ownerReview();try{l.email_draft=await draft(l);}catch(e){l.email_draft='';}l.status='ready';saveLeads();if(tab==='rev')ownerReview();}
+async function genEmail(l){l.status='researching';saveLeads();if(tab==='rev')ownerReview();Object.assign(l,await research(l));l.research_tries=1;
+  if(l.peo_fit==='none'){l.status='Skipped';l.skip_reason='auto-filtered: not a PEO fit'+(l.scope?' ('+l.scope+')':'');saveLeads();clearSrv(l);if(tab==='rev')ownerReview();return;}
+  l.status='drafting';saveLeads();if(tab==='rev')ownerReview();try{l.email_draft=await draft(l);}catch(e){l.email_draft='';}l.status='ready';saveLeads();if(tab==='rev')ownerReview();}
 
 function ownerReview(){
   const proc=leads.filter(l=>['queued','reading','researching','drafting'].includes(l.status));
   const need=leads.filter(l=>l.status==='needs_note');
-  const ready=leads.filter(l=>l.status==='ready'&&l.email);
+  const ready=leads.filter(l=>l.status==='ready'&&l.email&&!['low','none'].includes(l.peo_fit));
+  const lowfit=leads.filter(l=>l.status==='ready'&&l.email&&['low','none'].includes(l.peo_fit));
   const await_=leads.filter(l=>l.status==='ready'&&!l.email);
   const done=leads.filter(l=>['Sent','Filed','Skipped'].includes(l.status));
   let h='';
@@ -239,6 +249,7 @@ function ownerReview(){
   if(need.length)need.forEach(l=>h+=noteCard(l));else h+='<p class="muted" style="margin:0 2px 8px">None.</p>';
   h+='<div class="sec-title">✅ Ready to send ('+ready.length+')</div>';
   if(ready.length){h+='<div class="card"><button class="btn" onclick="approveAll()">🚀 Approve &amp; send all '+ready.length+'</button></div>';ready.forEach(l=>h+=readyCard(l));}else h+='<p class="muted" style="margin:0 2px 8px">None yet.</p>';
+  if(lowfit.length){h+='<div class="sec-title">⚠️ Low PEO fit — review first ('+lowfit.length+')</div><p class="muted" style="margin:0 2px 8px">Chains, franchises, public companies, govt — usually skip. These are kept OUT of "send all"; approve individually only if you know better.</p>';lowfit.forEach(l=>h+=readyCard(l));}
   h+='<div class="sec-title">✉️ Awaiting email ('+await_.length+')</div>';
   if(await_.length)await_.forEach(l=>h+=awaitCard(l));else h+='<p class="muted" style="margin:0 2px 8px">None.</p>';
   if(done.length)h+='<details style="margin-top:14px"><summary>Archive · '+done.length+'</summary>'+done.map(l=>'<div class="card lead sent"><b>'+esc(l.company)+'</b> <span class="pill">'+esc(l.status)+'</span> <span class="muted">'+esc(l.source||'')+'</span></div>').join('')+'</details>';
@@ -247,7 +258,11 @@ function ownerReview(){
 function srcPill(l){return l.source?'<span class="pill">👤 '+esc(l.source)+'</span>':''}
 function metaR(l){return '<div class="meta">'+(l.trade?'<span class="pill">'+esc(l.trade)+'</span>':'')+(l.neighborhood?'<span class="pill">📍 '+esc(l.neighborhood)+'</span>':'')+srcPill(l)+'</div>'}
 function noteCard(l){return '<div class="card lead note"><p class="big">'+esc(l.company)+'</p>'+metaR(l)+'<label style="margin-top:8px">Why reaching out? (required)</label><textarea id="nt-'+l.id+'">'+esc(l.note||'')+'</textarea><div class="row" style="margin-top:8px"><button class="btn sm" onclick="submitNote(\''+l.id+'\')">✍️ Generate</button><button class="btn ghost sm" onclick="skipLead(\''+l.id+'\')">Skip</button></div></div>'}
-function readyCard(l){const tag=l.email_type==='generic'?'⚠️ generic inbox':l.email_type==='manual'?'you entered':(l.contact_name?esc(l.contact_name):'business email')+(l.email_confidence?' · '+esc(l.email_confidence):'');return '<div class="card lead"><p class="big">'+esc(l.company)+'</p>'+metaR(l)+'<label style="margin-top:8px">Send to (tap to edit)</label><input id="em-'+l.id+'" value="'+esc(l.email)+'" inputmode="email" oninput="setF(\''+l.id+'\',\'email\',this.value)"><div class="hint">'+tag+(l.email_source?' · <a href="'+esc(l.email_source)+'" target="_blank">source</a>':'')+'</div>'+(l.note?'<div class="kv"><b>Note</b><span>'+esc(l.note)+'</span></div>':'')+'<label style="margin-top:8px">Opener</label><textarea class="op" id="ta-'+l.id+'" oninput="setF(\''+l.id+'\',\'email_draft\',this.value)">'+esc(l.email_draft||'')+'</textarea><div class="row" style="margin-top:10px"><button class="btn sm" onclick="approveOne(\''+l.id+'\')">✅ Approve &amp; send</button><button class="btn ghost sm" onclick="skipLead(\''+l.id+'\')">Skip</button></div></div>'}
+function fitBadge(l){const f=l.peo_fit;if(!f)return '';const c=f==='high'?'var(--green)':f==='medium'?'var(--accent)':'var(--danger)';return '<b style="color:'+c+'">PEO fit: '+esc(f)+'</b>'}
+function profileLine(l){if(!(l.peo_fit||l.scope||l.est_size))return '';return '<div class="hint" style="margin-top:6px">'+fitBadge(l)+(l.scope?' · '+esc(l.scope):'')+(l.est_size?' · ~'+esc(l.est_size)+' emp':'')+(l.fit_reason?' · '+esc(l.fit_reason):'')+'</div>'}
+function recipLine(l){const r=l.email_type==='generic'?'⚠️ generic inbox — no named person':l.email_type==='manual'?'you entered this':'→ '+(l.contact_name?esc(l.contact_name):'business email')+(l.contact_title?' ('+esc(l.contact_title)+')':'')+(l.email_confidence?' · '+esc(l.email_confidence)+' conf':'');return '<div class="hint">'+r+(l.email_source?' · <a href="'+esc(l.email_source)+'" target="_blank">source</a>':'')+'</div>'}
+function dupeOf(l){const e=(l.email||'').toLowerCase();const c=(l.company||'').toLowerCase().replace(/[^a-z0-9]/g,'');return leads.find(x=>x!==l&&['Sent','Filed'].includes(x.status)&&((e&&(x.email||'').toLowerCase()===e)||(c&&(x.company||'').toLowerCase().replace(/[^a-z0-9]/g,'')===c)));}
+function readyCard(l){const dup=dupeOf(l);const dupB=dup?'<div class="warn">🔁 Likely duplicate — first credited to <b>'+esc(dup.source||'?')+'</b>'+(dup.captured?' ('+esc(dup.captured.slice(0,10))+')':'')+'. Kept out of “send all.”</div>':'';return '<div class="card lead"><p class="big">'+esc(l.company)+'</p>'+metaR(l)+dupB+profileLine(l)+'<label style="margin-top:8px">Send to (tap to edit)</label><input id="em-'+l.id+'" value="'+esc(l.email)+'" inputmode="email" oninput="setF(\''+l.id+'\',\'email\',this.value)">'+recipLine(l)+(l.note?'<div class="kv"><b>Note</b><span>'+esc(l.note)+'</span></div>':'')+'<label style="margin-top:8px">Opener</label><textarea class="op" id="ta-'+l.id+'" oninput="setF(\''+l.id+'\',\'email_draft\',this.value)">'+esc(l.email_draft||'')+'</textarea><div class="row" style="margin-top:10px"><button class="btn sm" onclick="approveOne(\''+l.id+'\')">✅ Approve &amp; send</button><button class="btn ghost sm" onclick="skipLead(\''+l.id+'\')">Skip</button></div></div>'}
 function awaitCard(l){const t=l.research_tries||1,cap=t>=3;return '<div class="card lead note"><p class="big">'+esc(l.company)+'</p>'+metaR(l)+(l.website?'<div class="kv"><b>Web</b><span>'+esc(l.website)+'</span></div>':'')+'<div class="kv"><b>Email search</b><span>'+(cap?'none found':t+'/3')+'</span></div><label style="margin-top:8px">Know their email?</label><input id="mn-'+l.id+'" placeholder="owner@company.com" inputmode="email"><div class="row" style="margin-top:8px"><button class="btn sm" onclick="manEmail(\''+l.id+'\')">✅ Use it</button>'+(cap?'':'<button class="btn ghost sm" onclick="reDo(\''+l.id+'\')">🔁 Retry</button>')+'<button class="btn ghost sm" onclick="skipLead(\''+l.id+'\')">Discard</button></div></div>'}
 function setF(id,f,v){const l=leads.find(x=>x.id===id);if(l){l[f]=v;saveLeads()}}
 async function submitNote(id){const l=leads.find(x=>x.id===id);if(!l)return;const n=(document.getElementById('nt-'+id).value||'').trim();if(!n){toast('Add a note');return}l.note=n;saveLeads();await genEmail(l);ownerReview();}
@@ -255,7 +270,7 @@ async function reDo(id){const l=leads.find(x=>x.id===id);if(!l||(l.research_trie
 async function manEmail(id){const l=leads.find(x=>x.id===id);if(!l)return;const v=(document.getElementById('mn-'+id).value||'').trim();if(!/.+@.+\..+/.test(v)){toast('Valid email?');return}l.email=v;l.email_type='manual';if(!l.email_draft){l.status='drafting';saveLeads();ownerReview();try{l.email_draft=await draft(l)}catch(e){}}l.status='ready';saveLeads();ownerReview();}
 async function clearSrv(l){if(l.srv){try{await fetch(API+'/approve',{method:'POST',headers:ownerHdr(),body:JSON.stringify({id:l.srv})});}catch(e){}}}
 async function approveOne(id){const l=leads.find(x=>x.id===id);if(!l)return;l.status='Sent';saveLeads();await pushOT(l);await clearSrv(l);ownerReview();toast('✅ Sent: '+l.company);}
-async function approveAll(){const r=leads.filter(l=>l.status==='ready'&&l.email);if(!r.length)return;if(!confirm('Send to all '+r.length+'?'))return;toast('🚀 Sending…');for(const l of r){l.status='Sent';saveLeads();await pushOT(l);await clearSrv(l);}ownerReview();toast('✅ Sent '+r.length);}
+async function approveAll(){const r=leads.filter(l=>l.status==='ready'&&l.email&&!['low','none'].includes(l.peo_fit)&&!dupeOf(l));if(!r.length)return;if(!confirm('Send to all '+r.length+'?'))return;toast('🚀 Sending…');for(const l of r){l.status='Sent';saveLeads();await pushOT(l);await clearSrv(l);}ownerReview();toast('✅ Sent '+r.length);}
 async function skipLead(id){const l=leads.find(x=>x.id===id);if(!l)return;l.status='Skipped';saveLeads();await clearSrv(l);ownerReview();}
 async function pushOT(l){
   if(!owner.ot_webhook)return;const draft=l.email_draft||'';const sm=draft.match(/^\s*subject:\s*(.+)$/im);
