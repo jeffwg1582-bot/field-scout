@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Field Scout">
+<meta name="theme-color" content="#0b3d2e">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%230b3d2e'/%3E%3Ctext x='90' y='120' font-size='90' text-anchor='middle'%3E%F0%9F%93%B8%3C/text%3E%3C/svg%3E">
+<title>Field Scout</title>
+<style>
+  :root{--bg:#0b1f17;--card:#11271d;--line:#1f4232;--green:#1db876;--text:#eaf3ee;--muted:#8fb0a1;--accent:#ffd166;--danger:#ff6b6b;--radius:16px}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  body{padding:env(safe-area-inset-top) 0 0 0;min-height:100vh}
+  header{position:sticky;top:0;z-index:20;background:linear-gradient(180deg,#0b3d2e,#0b1f17);padding:14px 16px 12px;border-bottom:1px solid var(--line)}
+  header h1{margin:0;font-size:20px;display:flex;align-items:center;gap:8px}
+  header .sub{font-size:12px;color:var(--muted);margin-top:2px}
+  main{padding:16px;max-width:680px;margin:0 auto;padding-bottom:90px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:14px}
+  label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+  input,select,textarea{width:100%;background:#0a1812;border:1px solid var(--line);color:var(--text);border-radius:10px;padding:11px 12px;font-size:15px;font-family:inherit}
+  textarea{min-height:70px;resize:vertical;line-height:1.45}textarea.op{min-height:120px}
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;border:none;border-radius:12px;padding:15px;font-size:16px;font-weight:700;background:var(--green);color:#04140d;margin-top:6px}
+  .btn:active{transform:scale(.98)}.btn:disabled{opacity:.45}
+  .btn.secondary{background:#15311f;color:var(--text);border:1px solid var(--line)}
+  .btn.ghost{background:none;color:var(--green);border:1px solid var(--line)}
+  .btn.sm{padding:9px 12px;font-size:13px;width:auto;border-radius:9px}
+  .row{display:flex;gap:8px;flex-wrap:wrap}.row .btn{flex:1}
+  .pill{display:inline-block;background:#15311f;border:1px solid var(--line);color:var(--green);font-size:11px;padding:3px 9px;border-radius:999px;margin:3px 4px 0 0}
+  .muted{color:var(--muted);font-size:13px;line-height:1.5}.big{font-size:17px;font-weight:700;margin:0}
+  .snapbtn{border:2px dashed var(--line);border-radius:var(--radius);padding:38px 16px;text-align:center;color:var(--muted)}
+  .snapbtn .em{font-size:50px;display:block;margin-bottom:8px}
+  .counter{font-size:46px;font-weight:800;color:var(--green);text-align:center;line-height:1}
+  .spinner{width:16px;height:16px;border:3px solid #1db87644;border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:-2px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#04140d;border:1px solid var(--green);color:var(--text);padding:11px 16px;border-radius:10px;font-size:14px;z-index:50;max-width:90%;text-align:center;opacity:0;transition:opacity .25s;pointer-events:none}
+  .toast.show{opacity:1}
+  .sec-title{font-size:13px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);margin:18px 2px 8px}
+  .kv{display:flex;justify-content:space-between;gap:10px;font-size:14px;padding:5px 0;border-bottom:1px solid #14291e}.kv b{color:var(--muted);font-weight:600}
+  .ok{color:var(--green)}.warn{background:#2a1d0c;border:1px solid #6b4f1a;color:#ffd166;font-size:12px;padding:10px 12px;border-radius:10px;margin-top:8px;line-height:1.5}
+  .lead{border-left:4px solid var(--green)}.lead.note{border-left-color:var(--accent)}.lead.sent{border-left-color:#2c5a44;opacity:.7}
+  .empty{text-align:center;color:var(--muted);padding:34px 16px}.empty .em{font-size:42px;display:block;margin-bottom:10px}
+  .hint{font-size:11px;color:var(--muted);margin-top:4px}
+  .tabbar{position:fixed;bottom:0;left:0;right:0;z-index:30;display:flex;background:#0c241a;border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+  .tabbar button{flex:1;background:none;border:none;color:var(--muted);padding:10px 4px 12px;font-size:11px;display:flex;flex-direction:column;align-items:center;gap:3px;position:relative}
+  .tabbar button .ic{font-size:21px}.tabbar button.active{color:var(--green)}
+  .badge{position:absolute;top:4px;right:50%;transform:translateX(18px);background:var(--accent);color:#04140d;font-size:10px;font-weight:800;border-radius:999px;padding:0 5px;min-width:16px;text-align:center}
+  a{color:var(--green)}
+  .chooser{display:flex;flex-direction:column;gap:12px;margin-top:20px}
+</style>
+</head>
+<body>
+<header><h1>📸 Field Scout</h1><div class="sub" id="sub">Photo → lead</div></header>
+<main id="main"></main>
+<nav class="tabbar" id="tabbar" style="display:none"></nav>
+<div class="toast" id="toast"></div>
+
+<script>
+const API='/.netlify/functions';
+const LS={get:(k,d)=>{try{return JSON.parse(localStorage.getItem('fs_'+k))??d}catch(e){return d}},set:(k,v)=>{try{localStorage.setItem('fs_'+k,JSON.stringify(v));return 1}catch(e){return 0}}};
+let role=LS.get('role','');           // 'scout' | 'owner'
+let scout=LS.get('scout','');         // scout name
+let owner=LS.get('owner',{});         // owner settings {pass, anthropic, model, name, company, title, phone, calendar, offer, ot_webhook}
+if(!owner.ot_webhook) owner.ot_webhook='https://services.leadconnectorhq.com/hooks/WLzY4YaqN7jrDU5bVds6/webhook-trigger/e65dd564-0a8e-47fb-88e3-2bc7047599ba';
+let outbox=LS.get('outbox',[]);       // scout: unsent {id,img,mediaType,note,neighborhood,area}
+let leads=LS.get('leads',[]);         // owner: processed leads
+let geo=LS.get('geo',{});
+let processing=false, tab='cap';
+
+const $=s=>document.querySelector(s);
+function toast(m,ms=2600){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),ms)}
+function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function saveOutbox(){LS.set('outbox',outbox)}
+function saveLeads(){if(!LS.set('leads',leads))toast('⚠️ Storage full — approve to free space',4000)}
+
+/* ---------- geo ---------- */
+function getLocation(){
+  if(!navigator.geolocation)return;
+  navigator.geolocation.getCurrentPosition(async p=>{
+    geo.lat=p.coords.latitude;geo.lng=p.coords.longitude;
+    try{const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${geo.lat}&lon=${geo.lng}&zoom=17&addressdetails=1`,{headers:{'Accept':'application/json'}});
+      const a=(await r.json()).address||{};
+      geo.neighborhood=a.neighbourhood||a.suburb||a.quarter||a.residential||a.hamlet||a.village||a.town||a.city_district||a.city||a.county||'';
+      geo.area=[a.city||a.town||a.village||a.county,a.state].filter(Boolean).join(', ');
+    }catch(e){}LS.set('geo',geo);
+    $('#sub').textContent=geo.neighborhood?('📍 '+geo.neighborhood):(role==='owner'?'Owner — review & approve':'Snap & note');
+  },()=>{},{enableHighAccuracy:true,timeout:8000,maximumAge:60000});
+}
+function downscale(file){return new Promise(res=>{const r=new FileReader();r.onload=()=>{const img=new Image();img.onload=()=>{const max=1024;let{width:w,height:h}=img;if(w>h&&w>max){h=h*max/w;w=max}else if(h>max){w=w*max/h;h=max}const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);res(c.toDataURL('image/jpeg',0.6))};img.onerror=()=>res(r.result);img.src=r.result};r.readAsDataURL(file)})}
+
+/* ================= ROUTER ================= */
+function render(){
+  if(!role){return renderChooser();}
+  $('#tabbar').style.display='flex';
+  if(role==='scout') renderScout(); else renderOwner();
+}
+function renderChooser(){
+  $('#tabbar').style.display='none';
+  $('#sub').textContent='Welcome';
+  $('#main').innerHTML='<div class="card"><p class="big">Who are you?</p><p class="muted">Pick once. You can switch later in Setup.</p>'+
+    '<div class="chooser"><button class="btn" onclick="pickRole(\'scout\')">📸 I\'m scouting leads</button>'+
+    '<button class="btn secondary" onclick="pickRole(\'owner\')">🗂️ I\'m the owner (review &amp; send)</button></div></div>';
+}
+function pickRole(r){role=r;LS.set('role',r);render();getLocation();}
+
+/* ================= SCOUT ================= */
+function renderScout(){
+  $('#sub').textContent=geo.neighborhood?('📍 '+geo.neighborhood):'Snap & note';
+  $('#tabbar').innerHTML='<button class="active" onclick="scoutTab(\'cap\')"><span class="ic">📸</span>Snap</button>'+
+    '<button onclick="scoutTab(\'set\')"><span class="ic">⚙️</span>Setup</button>';
+  if(!scout){ $('#main').innerHTML='<div class="card"><p class="big">Your name</p><p class="muted">This tags every lead you send so you get credit.</p><label>Name</label><input id="scn" placeholder="First Last"><button class="btn" onclick="saveScout()">Save</button></div>'; return; }
+  if(tab==='set'){ return scoutSetup(); }
+  let h='<div class="card"><p class="big">Snap a lead, '+esc(scout.split(' ')[0])+'</p><p class="muted">Tap, then add a quick note on WHY you\'re reaching out (their truck, their shop, you use them). The note is required — it writes the email.</p>'+
+    '<div class="snapbtn" onclick="document.getElementById(\'file\').click()" style="margin-top:12px"><span class="em">📷</span>Tap to snap</div>'+
+    '<input id="file" type="file" accept="image/*" capture="environment" multiple style="display:none"></div>';
+  if(outbox.length){ h+='<div class="sec-title">To send ('+outbox.length+')</div>'; outbox.forEach(o=>{ h+=
+    '<div class="card lead note"><img src="'+o.img+'" style="width:70px;height:70px;object-fit:cover;border-radius:10px;border:1px solid var(--line)">'+
+    '<label style="margin-top:8px">Why are you reaching out? (required)</label>'+
+    '<textarea id="ob-'+o.id+'" placeholder="e.g. their truck on US-281 · I use their gym">'+esc(o.note||'')+'</textarea>'+
+    '<div class="row" style="margin-top:8px"><button class="btn sm" onclick="sendOne(\''+o.id+'\')">📤 Send</button><button class="btn ghost sm" onclick="dropOut(\''+o.id+'\')">Delete</button></div></div>'; });
+  } else { h+='<div class="empty"><span class="em">📭</span>Nothing waiting. Snap a business to start.</div>'; }
+  if(LS.get('sentCount',0)) h+='<p class="muted" style="text-align:center">✅ '+LS.get('sentCount',0)+' sent so far</p>';
+  $('#main').innerHTML=h;
+  $('#file').addEventListener('change',onSnap);
+}
+function scoutTab(t){tab=t;renderScout();}
+function saveScout(){const v=$('#scn').value.trim();if(!v){toast('Enter your name');return}scout=v;LS.set('scout',v);renderScout();}
+function scoutSetup(){
+  $('#main').innerHTML='<div class="card"><p class="big">Setup</p><label>Your name (credit)</label><input id="scn2" value="'+esc(scout)+'">'+
+    '<button class="btn" onclick="(function(){var v=document.getElementById(\'scn2\').value.trim();if(v){scout=v;LS.set(\'scout\',v);toast(\'Saved\')}})()">Save name</button>'+
+    '<button class="btn ghost" style="margin-top:14px" onclick="switchRole()">Switch role</button></div>';
+}
+async function onSnap(e){const files=[...e.target.files];e.target.value='';getLocation();for(const f of files){const img=await downscale(f);outbox.unshift({id:'O'+Date.now()+Math.random().toString(36).slice(2,6),img,mediaType:'image/jpeg',note:'',neighborhood:geo.neighborhood||'',area:geo.area||''});}saveOutbox();renderScout();toast('📸 '+files.length+' banked — add a note & send');}
+function dropOut(id){outbox=outbox.filter(o=>o.id!==id);saveOutbox();renderScout();}
+async function sendOne(id){
+  const o=outbox.find(x=>x.id===id);if(!o)return;
+  const ta=document.getElementById('ob-'+id);o.note=(ta&&ta.value||'').trim();
+  if(!o.note){toast('Add a note first');return}
+  saveOutbox();toast('📤 Sending…');
+  try{
+    const r=await fetch(API+'/process',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({image:o.img,mediaType:o.mediaType,note:o.note,scout,neighborhood:o.neighborhood,area:o.area})});
+    const j=await r.json();
+    if(!r.ok||j.error)throw new Error(j.error||'failed');
+    outbox=outbox.filter(x=>x.id!==id);saveOutbox();
+    LS.set('sentCount',(LS.get('sentCount',0)+1));renderScout();toast('✅ Sent to '+(owner.name||'the owner'));
+  }catch(e){toast('⚠️ '+e.message,4000);}
+}
+
+/* ================= OWNER ================= */
+function ownerHdr(){return {'content-type':'application/json','x-owner-pass':owner.pass||''}}
+function renderOwner(){
+  $('#sub').textContent=geo.neighborhood?('📍 '+geo.neighborhood):'Owner — review & approve';
+  const ready=leads.filter(l=>l.status==='ready'&&l.email).length;
+  $('#tabbar').innerHTML='<button class="'+(tab==='cap'?'active':'')+'" onclick="ownerTab(\'cap\')"><span class="ic">📸</span>Snap</button>'+
+    '<button class="'+(tab==='rev'?'active':'')+'" onclick="ownerTab(\'rev\')"><span class="ic">📋</span>Review'+(ready?'<span class="badge">'+ready+'</span>':'')+'</button>'+
+    '<button class="'+(tab==='set'?'active':'')+'" onclick="ownerTab(\'set\')"><span class="ic">⚙️</span>Setup</button>';
+  if(tab==='set') return ownerSetup();
+  if(tab==='rev') return ownerReview();
+  // capture tab
+  $('#main').innerHTML='<div class="card"><p class="big">Pull the team inbox</p><p class="muted">Bring in everything your scouts submitted, then process them on this device.</p>'+
+    '<button class="btn" onclick="pullInbox()">⬇️ Pull team inbox</button></div>'+
+    '<div class="card"><p class="big">Or snap your own</p><div class="snapbtn" onclick="document.getElementById(\'ofile\').click()" style="margin-top:10px"><span class="em">📷</span>Tap to snap</div>'+
+    '<input id="ofile" type="file" accept="image/*" capture="environment" multiple style="display:none">'+
+    '<label for="onote" style="margin-top:10px">Optional note for next snaps</label><input id="onote" placeholder="why you\'re reaching out"></div>'+
+    '<div class="card"><p class="muted" id="oProc">'+ownerProcLabel()+'</p>'+(leads.some(l=>l.status==='queued')?'<button class="btn secondary" onclick="processQueue()">⚙️ Process now</button>':'')+'</div>';
+  $('#ofile').addEventListener('change',onOwnerSnap);
+}
+function ownerTab(t){tab=t;renderOwner();if(t==='rev')maybeProcess();}
+function ownerProcLabel(){const q=leads.filter(l=>l.status==='queued').length;const b=leads.filter(l=>['reading','researching','drafting'].includes(l.status)).length;const r=leads.filter(l=>l.status==='ready').length;return b?('Working on '+b+'…'):q?(q+' to process'):r?(r+' ready in Review'):'Nothing to process yet.';}
+async function onOwnerSnap(e){const files=[...e.target.files];e.target.value='';const note=($('#onote')&&$('#onote').value||'').trim();getLocation();for(const f of files){const img=await downscale(f);leads.unshift({id:'L'+Date.now()+Math.random().toString(36).slice(2,6),img,mediaType:'image/jpeg',status:'queued',note,source:(owner.name||'me'),neighborhood:geo.neighborhood||'',area:geo.area||'',captured:new Date().toISOString()});}saveLeads();renderOwner();toast('📸 '+files.length+' banked');processQueue();}
+
+async function pullInbox(){
+  if(!owner.pass){toast('Set your owner passcode in Setup');tab='set';return renderOwner();}
+  toast('⬇️ Pulling…');
+  try{
+    const r=await fetch(API+'/pending?pass='+encodeURIComponent(owner.pass));
+    const j=await r.json();if(!r.ok||j.error)throw new Error(j.error||'failed');
+    let added=0;
+    (j.subs||[]).forEach(s=>{ if(leads.some(l=>l.srv===s.id))return; leads.unshift({id:'L'+Date.now()+Math.random().toString(36).slice(2,6),srv:s.id,img:s.image,mediaType:s.mediaType||'image/jpeg',status:'queued',note:s.note,source:s.scout||'',neighborhood:s.neighborhood||'',area:s.area||'',captured:s.captured||new Date().toISOString()}); added++; });
+    saveLeads();renderOwner();toast(added?('⬇️ Pulled '+added+' — processing'):'Inbox empty');if(added)processQueue();
+  }catch(e){toast('⚠️ '+e.message,4000);}
+}
+
+/* ---- owner client-side AI (key stays here) ---- */
+const RESEARCH_MODEL='claude-haiku-4-5-20251001';
+async function callRaw(body){if(!owner.anthropic)throw new Error('Add your Anthropic key in Setup');const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':owner.anthropic,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify(body)});const j=await r.json();if(j.error)throw new Error(j.error.message||'API error');return j;}
+const tOf=j=>(j.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('');
+function pJSON(t){try{return JSON.parse(t)}catch(e){}const m=t&&t.match(/\{[\s\S]*\}/);if(m){try{return JSON.parse(m[0])}catch(e){}}return null;}
+const VISION=`You are a field sales scout. Identify EVERY distinct business in the photo (a park/plaza sign may list several). Return ONLY JSON:{"businesses":[{"company":"exact name","trade":"industry","phone":"if visible else ''","website":"if visible else ''","services":["services"],"contact_title":"likely title, default 'Owner'","source_type":"work_vehicle|storefront|office|yard_sign|park_sign|product|other","signage_text":"other readable text","confidence":"high|medium|low"}]}Use '' for unreadable. Never invent phone/website.`;
+async function research(l){const prompt=`Find who to email at this small business so a rep can pitch PEO/HR to its OWNER. Open the WEBSITE first (Contact/About/Team), then the web.
+Business: ${l.company}
+${l.website?'Website: '+l.website:''}
+${l.area?'Location: '+l.area:''}
+${l.phone?'Phone: '+l.phone:''}
+STRICT: owner's direct email if verifiable -> email_type "personal"; else general inbox -> "generic". contact_name only with real evidence, else EMPTY. NEVER invent. If nothing, empty.
+Return ONLY JSON:{"email":"","email_type":"personal|generic","contact_name":"","title":"","confidence":"high|medium|low","source":"url"}`;
+  try{const j=await callRaw({model:RESEARCH_MODEL,max_tokens:1024,tools:[{type:'web_search_20250305',name:'web_search',max_uses:3}],messages:[{role:'user',content:[{type:'text',text:prompt}]}]});const r=pJSON(tOf(j))||{};return{email:(r.email||'').trim(),email_type:(r.email_type||'').trim(),contact_name:(r.contact_name||'').trim(),contact_title:(r.title||'').trim()||l.contact_title,email_confidence:r.confidence||'',email_source:(r.source||'').trim()};}catch(e){return{email:''};}}
+async function draft(l){const s=owner;const prompt=`Write a SHORT warm first-touch email from an outside rep.
+Me: ${s.name||'(rep)'}, ${s.title||''} at ${s.company||'My PEO Pros'}. We offer: ${s.offer||'PEO — payroll, benefits, HR & workers comp for small businesses'}.
+Prospect: ${l.company} (${l.trade||'local business'})${l.contact_name?', contact '+l.contact_name:''}.
+Rep's note (USE as the angle — truck, office, or they use the product): "${l.note||''}"
+${l.neighborhood?'Area: '+l.neighborhood:''}
+Rules: ${l.contact_name?'greet '+l.contact_name:'neutral greeting "Hi there", no invented name'}; natural hook from the note (don't force "saw your trucks"); 90 words max; one soft ask for a quick call${s.calendar?' ('+s.calendar+')':''}; sign ${s.name||''}${s.phone?', '+s.phone:''}. Return ONLY: "Subject:" line then body.`;
+  return tOf(await callRaw({model:RESEARCH_MODEL,max_tokens:700,messages:[{role:'user',content:[{type:'text',text:prompt}]}]})).trim();}
+
+async function maybeProcess(){if(navigator.onLine!==false&&leads.some(l=>l.status==='queued'))processQueue();}
+async function processQueue(){
+  if(processing)return;processing=true;if(tab==='cap'){const e=$('#oProc');if(e)e.innerHTML='<span class="spinner"></span> Working…';}
+  try{
+    while(true){
+      const l=leads.find(x=>x.status==='queued');if(!l)break;
+      try{
+        l.status='reading';saveLeads();if(tab==='rev')ownerReview();
+        const out=tOf(await callRaw({model:owner.model||'claude-sonnet-4-6',max_tokens:1600,messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:l.mediaType,data:l.img.split(',')[1]}},{type:'text',text:VISION+(l.note?'\nRep note: '+l.note:'')}]}]}));
+        const biz=(pJSON(out)?.businesses||[]).filter(b=>b.company);l.img='';
+        if(!biz.length){l.status='unreadable';saveLeads();continue;}
+        Object.assign(l,biz[0]);
+        for(let i=1;i<biz.length;i++)leads.unshift({...biz[i],id:'L'+Date.now()+Math.random().toString(36).slice(2,6),status:(l.note?'noted':'needs_note'),note:l.note,source:l.source,neighborhood:l.neighborhood,area:l.area,captured:l.captured});
+        if(l.note){await genEmail(l);}else{l.status='needs_note';saveLeads();if(tab==='rev')ownerReview();}
+      }catch(e){l.status='error';l.err=e.message;if(l.img)l.img='';saveLeads();}
+      const sib=leads.find(x=>x.status==='noted');if(sib)await genEmail(sib);
+    }
+  }finally{processing=false;if(tab==='rev')ownerReview();else renderOwner();}
+}
+async function genEmail(l){l.status='researching';saveLeads();if(tab==='rev')ownerReview();Object.assign(l,await research(l));l.research_tries=1;l.status='drafting';saveLeads();if(tab==='rev')ownerReview();try{l.email_draft=await draft(l);}catch(e){l.email_draft='';}l.status='ready';saveLeads();if(tab==='rev')ownerReview();}
+
+function ownerReview(){
+  const proc=leads.filter(l=>['queued','reading','researching','drafting'].includes(l.status));
+  const need=leads.filter(l=>l.status==='needs_note');
+  const ready=leads.filter(l=>l.status==='ready'&&l.email);
+  const await_=leads.filter(l=>l.status==='ready'&&!l.email);
+  const done=leads.filter(l=>['Sent','Filed','Skipped'].includes(l.status));
+  let h='';
+  if(!leads.length){$('#main').innerHTML='<div class="empty"><span class="em">🗂️</span>Nothing yet. Pull the inbox or snap on the Snap tab.</div>';return;}
+  if(proc.length)h+='<div class="card"><span class="spinner"></span> Working on '+proc.length+'… <span class="muted">(read → email)</span></div>';
+  h+='<div class="sec-title">📝 Needs a note ('+need.length+')</div>';
+  if(need.length)need.forEach(l=>h+=noteCard(l));else h+='<p class="muted" style="margin:0 2px 8px">None.</p>';
+  h+='<div class="sec-title">✅ Ready to send ('+ready.length+')</div>';
+  if(ready.length){h+='<div class="card"><button class="btn" onclick="approveAll()">🚀 Approve &amp; send all '+ready.length+'</button></div>';ready.forEach(l=>h+=readyCard(l));}else h+='<p class="muted" style="margin:0 2px 8px">None yet.</p>';
+  h+='<div class="sec-title">✉️ Awaiting email ('+await_.length+')</div>';
+  if(await_.length)await_.forEach(l=>h+=awaitCard(l));else h+='<p class="muted" style="margin:0 2px 8px">None.</p>';
+  if(done.length)h+='<details style="margin-top:14px"><summary>Archive · '+done.length+'</summary>'+done.map(l=>'<div class="card lead sent"><b>'+esc(l.company)+'</b> <span class="pill">'+esc(l.status)+'</span> <span class="muted">'+esc(l.source||'')+'</span></div>').join('')+'</details>';
+  $('#main').innerHTML=h;
+}
+function srcPill(l){return l.source?'<span class="pill">👤 '+esc(l.source)+'</span>':''}
+function metaR(l){return '<div class="meta">'+(l.trade?'<span class="pill">'+esc(l.trade)+'</span>':'')+(l.neighborhood?'<span class="pill">📍 '+esc(l.neighborhood)+'</span>':'')+srcPill(l)+'</div>'}
+function noteCard(l){return '<div class="card lead note"><p class="big">'+esc(l.company)+'</p>'+metaR(l)+'<label style="margin-top:8px">Why reaching out? (required)</label><textarea id="nt-'+l.id+'">'+esc(l.note||'')+'</textarea><div class="row" style="margin-top:8px"><button class="btn sm" onclick="submitNote(\''+l.id+'\')">✍️ Generate</button><button class="btn ghost sm" onclick="skipLead(\''+l.id+'\')">Skip</button></div></div>'}
+function readyCard(l){const tag=l.email_type==='generic'?'⚠️ generic inbox':l.email_type==='manual'?'you entered':(l.contact_name?esc(l.contact_name):'business email')+(l.email_confidence?' · '+esc(l.email_confidence):'');return '<div class="card lead"><p class="big">'+esc(l.company)+'</p>'+metaR(l)+'<label style="margin-top:8px">Send to (tap to edit)</label><input id="em-'+l.id+'" value="'+esc(l.email)+'" inputmode="email" oninput="setF(\''+l.id+'\',\'email\',this.value)"><div class="hint">'+tag+(l.email_source?' · <a href="'+esc(l.email_source)+'" target="_blank">source</a>':'')+'</div>'+(l.note?'<div class="kv"><b>Note</b><span>'+esc(l.note)+'</span></div>':'')+'<label style="margin-top:8px">Opener</label><textarea class="op" id="ta-'+l.id+'" oninput="setF(\''+l.id+'\',\'email_draft\',this.value)">'+esc(l.email_draft||'')+'</textarea><div class="row" style="margin-top:10px"><button class="btn sm" onclick="approveOne(\''+l.id+'\')">✅ Approve &amp; send</button><button class="btn ghost sm" onclick="skipLead(\''+l.id+'\')">Skip</button></div></div>'}
+function awaitCard(l){const t=l.research_tries||1,cap=t>=3;return '<div class="card lead note"><p class="big">'+esc(l.company)+'</p>'+metaR(l)+(l.website?'<div class="kv"><b>Web</b><span>'+esc(l.website)+'</span></div>':'')+'<div class="kv"><b>Email search</b><span>'+(cap?'none found':t+'/3')+'</span></div><label style="margin-top:8px">Know their email?</label><input id="mn-'+l.id+'" placeholder="owner@company.com" inputmode="email"><div class="row" style="margin-top:8px"><button class="btn sm" onclick="manEmail(\''+l.id+'\')">✅ Use it</button>'+(cap?'':'<button class="btn ghost sm" onclick="reDo(\''+l.id+'\')">🔁 Retry</button>')+'<button class="btn ghost sm" onclick="skipLead(\''+l.id+'\')">Discard</button></div></div>'}
+function setF(id,f,v){const l=leads.find(x=>x.id===id);if(l){l[f]=v;saveLeads()}}
+async function submitNote(id){const l=leads.find(x=>x.id===id);if(!l)return;const n=(document.getElementById('nt-'+id).value||'').trim();if(!n){toast('Add a note');return}l.note=n;saveLeads();await genEmail(l);ownerReview();}
+async function reDo(id){const l=leads.find(x=>x.id===id);if(!l||(l.research_tries||1)>=3)return;l.research_tries=(l.research_tries||1)+1;l.status='researching';saveLeads();ownerReview();Object.assign(l,await research(l));if(l.email){l.status='drafting';saveLeads();ownerReview();try{l.email_draft=await draft(l)}catch(e){}}l.status='ready';saveLeads();ownerReview();toast(l.email?'✅ Found':'Still none');}
+async function manEmail(id){const l=leads.find(x=>x.id===id);if(!l)return;const v=(document.getElementById('mn-'+id).value||'').trim();if(!/.+@.+\..+/.test(v)){toast('Valid email?');return}l.email=v;l.email_type='manual';if(!l.email_draft){l.status='drafting';saveLeads();ownerReview();try{l.email_draft=await draft(l)}catch(e){}}l.status='ready';saveLeads();ownerReview();}
+async function clearSrv(l){if(l.srv){try{await fetch(API+'/approve',{method:'POST',headers:ownerHdr(),body:JSON.stringify({id:l.srv})});}catch(e){}}}
+async function approveOne(id){const l=leads.find(x=>x.id===id);if(!l)return;l.status='Sent';saveLeads();await pushOT(l);await clearSrv(l);ownerReview();toast('✅ Sent: '+l.company);}
+async function approveAll(){const r=leads.filter(l=>l.status==='ready'&&l.email);if(!r.length)return;if(!confirm('Send to all '+r.length+'?'))return;toast('🚀 Sending…');for(const l of r){l.status='Sent';saveLeads();await pushOT(l);await clearSrv(l);}ownerReview();toast('✅ Sent '+r.length);}
+async function skipLead(id){const l=leads.find(x=>x.id===id);if(!l)return;l.status='Skipped';saveLeads();await clearSrv(l);ownerReview();}
+async function pushOT(l){
+  if(!owner.ot_webhook)return;const draft=l.email_draft||'';const sm=draft.match(/^\s*subject:\s*(.+)$/im);
+  const payload={company:l.company,companyName:l.company,name:l.company,phone:l.phone||'',website:l.website||'',trade:l.trade||'',contact_title:l.contact_title||'Owner',neighborhood:l.neighborhood||'',area:l.area||'',source_type:l.source_type||'',signage:l.signage_text||'',services:(l.services||[]).join(', '),scene_notes:l.note||'',what_i_saw:[(l.source_type||'').replace('_',' '),l.signage_text,(l.services||[]).join(', ')].filter(Boolean).join(' — '),captured:l.captured||'',email_draft:draft,email_subject:sm?sm[1].trim():('Reaching out — '+l.company),email_body:draft.replace(/^\s*subject:\s*.+$/im,'').trim(),email:l.email||'',contact_name:l.contact_name||'',auto_send:l.email?'yes':'no',scout:l.source||'',source:l.source||'',tag:'field-scout'};
+  try{await fetch(owner.ot_webhook,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});}catch(e){try{await fetch(owner.ot_webhook,{method:'POST',mode:'no-cors',headers:{'content-type':'text/plain'},body:JSON.stringify(payload)});}catch(e2){}}
+}
+
+function ownerSetup(){
+  $('#main').innerHTML='<div class="card"><p class="big">Owner setup</p><p class="muted">Your passcode unlocks the team inbox. Your AI key powers the reading/drafting and stays on this device only.</p>'+
+    '<label>Owner passcode (matches Netlify setting)</label><input id="o_pass" type="password" value="'+esc(owner.pass||'')+'">'+
+    '<label>Anthropic API key</label><input id="o_key" type="password" value="'+esc(owner.anthropic||'')+'" placeholder="sk-ant-...">'+
+    '<label>Photo-reading model</label><select id="o_model"><option value="claude-sonnet-4-6">Sonnet 4.6 (recommended)</option><option value="claude-opus-4-8">Opus 4.8</option><option value="claude-haiku-4-5-20251001">Haiku 4.5 (cheap)</option></select></div>'+
+    '<div class="card"><p class="big">Sender (the outreach is from)</p><label>Name</label><input id="o_name" value="'+esc(owner.name||'')+'"><label>Company</label><input id="o_company" value="'+esc(owner.company||'')+'"><label>Title</label><input id="o_title" value="'+esc(owner.title||'')+'"><label>Phone</label><input id="o_phone" value="'+esc(owner.phone||'')+'"><label>Booking link</label><input id="o_cal" value="'+esc(owner.calendar||'')+'"><label>What you offer</label><input id="o_offer" value="'+esc(owner.offer||'')+'"></div>'+
+    '<div class="card"><label>OT Inbound Webhook URL</label><input id="o_hook" value="'+esc(owner.ot_webhook||'')+'"></div>'+
+    '<button class="btn" onclick="saveOwner()">💾 Save</button><button class="btn ghost" style="margin-top:10px" onclick="switchRole()">Switch role</button>';
+  if(owner.model)$('#o_model').value=owner.model;
+}
+function saveOwner(){owner={...owner,pass:$('#o_pass').value.trim(),anthropic:$('#o_key').value.trim(),model:$('#o_model').value,name:$('#o_name').value.trim(),company:$('#o_company').value.trim(),title:$('#o_title').value.trim(),phone:$('#o_phone').value.trim(),calendar:$('#o_cal').value.trim(),offer:$('#o_offer').value.trim(),ot_webhook:$('#o_hook').value.trim()};LS.set('owner',owner);toast('✅ Saved');}
+function switchRole(){if(!confirm('Switch role on this device?'))return;role='';LS.set('role','');tab='cap';render();}
+
+/* ---------- init ---------- */
+render();getLocation();
+</script>
+</body>
+</html>
