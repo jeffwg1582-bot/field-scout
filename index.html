@@ -190,7 +190,12 @@ async function callRaw(body){if(!owner.anthropic)throw new Error('Add your Anthr
 const tOf=j=>(j.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('');
 function pJSON(t){try{return JSON.parse(t)}catch(e){}const m=t&&t.match(/\{[\s\S]*\}/);if(m){try{return JSON.parse(m[0])}catch(e){}}return null;}
 const VISION=`You are a field sales scout. Identify EVERY distinct business in the photo (a park/plaza sign may list several). Return ONLY JSON:{"businesses":[{"company":"exact name","trade":"industry","phone":"if visible else ''","website":"if visible else ''","services":["services"],"contact_title":"likely title, default 'Owner'","source_type":"work_vehicle|storefront|office|yard_sign|park_sign|product|other","signage_text":"other readable text","confidence":"high|medium|low"}]}Use '' for unreadable. Never invent phone/website.`;
-async function research(l){const prompt=`Research this business so a PEO/HR rep can (a) decide if it's a fit and (b) reach the right person. Open the WEBSITE first (Contact/About/Team), then the web (Google Business, directories, social, news).
+async function research(l){
+  // Apollo first — verified owner email (1 credit). Falls back to web search if no match.
+  try{const ar=await fetch(API+'/apollo',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pass:owner.pass,company:l.company,domain:l.website||'',area:l.area||''})});const aj=await ar.json();
+    if(aj&&aj.found&&aj.email){return{email:aj.email,email_type:aj.email_type||'personal',contact_name:aj.contact_name||'',contact_title:aj.contact_title||l.contact_title,email_confidence:'apollo',email_source:aj.source||'Apollo',scope:aj.scope||'',est_size:aj.est_size||'',peo_fit:(aj.peo_fit||'').toLowerCase(),fit_reason:aj.fit_reason||''};}
+  }catch(e){}
+  const prompt=`Research this business so a PEO/HR rep can (a) decide if it's a fit and (b) reach the right person. Open the WEBSITE first (Contact/About/Team), then the web (Google Business, directories, social, news).
 Business: ${l.company}
 ${l.website?'Website: '+l.website:''}
 ${l.area?'Location: '+l.area:''}
