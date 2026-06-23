@@ -53,13 +53,16 @@ export default async (req) => {
     if (/email_not_unlocked|notunlocked|@domain\.com/i.test(email)) email = '';
 
     const name = [per.first_name || pick.first_name, per.last_name || pick.last_name].filter(Boolean).join(' ').trim();
+    const title = per.title || pick.title || '';
+    // LEADERSHIP-ONLY: reject anyone who isn't a decision-maker
+    const LEAD = /owner|president|ceo|founder|principal|partner|proprietor|managing|general manager|\bgm\b|vice president|\bvp\b|director|chief|co-?owner/i;
     let peo_fit = '';
     if (emp) peo_fit = (emp >= 5 && emp <= 100) ? 'high' : (emp <= 4) ? 'low' : (emp <= 500) ? 'medium' : 'low';
 
-    if (!email) return json({ found: false }, 200);
+    if (!email || !LEAD.test(title)) return json({ found: false, note: 'no leadership email' }, 200);
     return json({
       found: true, email, email_type: 'personal',
-      contact_name: name, contact_title: per.title || pick.title || '',
+      contact_name: name, contact_title: title,
       scope: 'local independent', est_size: emp ? String(emp) : '',
       peo_fit, fit_reason: emp ? (emp + ' employees') : '', source: 'Apollo verified',
     }, 200);
