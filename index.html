@@ -112,13 +112,15 @@ function renderScout(){
     '<button onclick="scoutTab(\'set\')"><span class="ic">⚙️</span>Setup</button>';
   if(!scout){ $('#main').innerHTML='<div class="card"><p class="big">Quick setup</p><p class="muted">One time. Your name gets you the credit; the team code is from whoever invited you.</p><label>Your name</label><input id="scn" placeholder="First Last"><label>Team code</label><input id="sccode" placeholder="ask the person who invited you" value="'+esc(LS.get('scoutcode',''))+'"><button class="btn" onclick="saveScout()">Save</button></div>'; return; }
   if(tab==='set'){ return scoutSetup(); }
-  let h='<div class="card"><p class="big">Snap a lead, '+esc(scout.split(' ')[0])+'</p><p class="muted">Tap, then add a quick note on WHY you\'re reaching out (their truck, their shop, you use them). The note is required — it writes the email.</p>'+
+  let h='<div class="card"><p class="big">Snap a lead, '+esc(scout.split(' ')[0])+'</p><p class="muted">Just tap to snap — that\'s it. A note is optional; the app reads the photo for context (truck, billboard, storefront, highway). Add one only if you want to.</p>'+
     '<div class="snapbtn" onclick="document.getElementById(\'file\').click()" style="margin-top:12px"><span class="em">📷</span>Tap to snap</div>'+
     '<input id="file" type="file" accept="image/*" capture="environment" multiple style="display:none"></div>';
-  if(outbox.length){ h+='<div class="sec-title">To send ('+outbox.length+')</div>'; outbox.forEach(o=>{ h+=
+  if(outbox.length){ h+='<div class="sec-title">To send ('+outbox.length+')</div>';
+    h+='<div class="card"><label>Optional note for all (leave blank — it reads the photo)</label><input id="allnote" placeholder="e.g. all along I-35 today"><button class="btn" onclick="sendAll()">📤 Send all '+outbox.length+'</button></div>';
+    outbox.forEach(o=>{ h+=
     '<div class="card lead note"><img src="'+o.img+'" style="width:70px;height:70px;object-fit:cover;border-radius:10px;border:1px solid var(--line)">'+
-    '<label style="margin-top:8px">Why are you reaching out? (required)</label>'+
-    '<textarea id="ob-'+o.id+'" placeholder="e.g. their truck on US-281 · I use their gym">'+esc(o.note||'')+'</textarea>'+
+    '<label style="margin-top:8px">Note (optional — add context only if you want)</label>'+
+    '<textarea id="ob-'+o.id+'" placeholder="e.g. I use their gym · their billboard on 281">'+esc(o.note||'')+'</textarea>'+
     '<div class="row" style="margin-top:8px"><button class="btn sm" onclick="sendOne(\''+o.id+'\')">📤 Send</button><button class="btn ghost sm" onclick="dropOut(\''+o.id+'\')">Delete</button></div></div>'; });
   } else { h+='<div class="empty"><span class="em">📭</span>Nothing waiting. Snap a business to start.</div>'; }
   if(LS.get('sentCount',0)) h+='<p class="muted" style="text-align:center">✅ '+LS.get('sentCount',0)+' sent so far</p>';
@@ -138,7 +140,6 @@ function dropOut(id){outbox=outbox.filter(o=>o.id!==id);saveOutbox();renderScout
 async function sendOne(id){
   const o=outbox.find(x=>x.id===id);if(!o)return;
   const ta=document.getElementById('ob-'+id);o.note=(ta&&ta.value||'').trim();
-  if(!o.note){toast('Add a note first');return}
   saveOutbox();toast('📤 Sending…');
   try{
     const r=await fetch(API+'/process',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({image:o.img,mediaType:o.mediaType,note:o.note,scout,code:LS.get('scoutcode',''),neighborhood:o.neighborhood,area:o.area})});
@@ -147,6 +148,19 @@ async function sendOne(id){
     outbox=outbox.filter(x=>x.id!==id);saveOutbox();
     LS.set('sentCount',(LS.get('sentCount',0)+1));renderScout();toast('✅ Sent to '+(owner.name||'the owner'));
   }catch(e){toast('⚠️ '+e.message,4000);}
+}
+async function sendAll(){
+  const shared=($('#allnote')&&$('#allnote').value||'').trim();
+  const items=[...outbox];if(!items.length)return;
+  toast('📤 Sending '+items.length+'…');let ok=0;
+  for(const o of items){
+    const ta=document.getElementById('ob-'+o.id);o.note=(ta&&ta.value||'').trim()||shared;
+    try{const r=await fetch(API+'/process',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({image:o.img,mediaType:o.mediaType,note:o.note,scout,code:LS.get('scoutcode',''),neighborhood:o.neighborhood,area:o.area})});const j=await r.json();
+      if(r.ok&&!j.error){outbox=outbox.filter(x=>x.id!==o.id);LS.set('sentCount',(LS.get('sentCount',0)+1));ok++;}else if(j.error){toast('⚠️ '+j.error,4000);}
+    }catch(e){}
+    saveOutbox();
+  }
+  renderScout();toast('✅ Sent '+ok);
 }
 
 /* ================= OWNER ================= */
@@ -189,7 +203,7 @@ const RESEARCH_MODEL='claude-haiku-4-5-20251001';
 async function callRaw(body){if(!owner.anthropic)throw new Error('Add your Anthropic key in Setup');const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':owner.anthropic,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify(body)});const j=await r.json();if(j.error)throw new Error(j.error.message||'API error');return j;}
 const tOf=j=>(j.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('');
 function pJSON(t){try{return JSON.parse(t)}catch(e){}const m=t&&t.match(/\{[\s\S]*\}/);if(m){try{return JSON.parse(m[0])}catch(e){}}return null;}
-const VISION=`You are a field sales scout. Identify EVERY distinct business in the photo (a park/plaza sign may list several). Return ONLY JSON:{"businesses":[{"company":"exact name","trade":"industry","phone":"if visible else ''","website":"if visible else ''","services":["services"],"contact_title":"likely title, default 'Owner'","source_type":"work_vehicle|storefront|office|yard_sign|park_sign|product|other","signage_text":"other readable text","confidence":"high|medium|low"}]}Use '' for unreadable. Never invent phone/website.`;
+const VISION=`You are a field sales scout. Identify EVERY distinct business in the photo (a park/plaza sign may list several). Return ONLY JSON:{"businesses":[{"company":"exact name","trade":"industry","phone":"if visible else ''","website":"if visible else ''","services":["services"],"contact_title":"likely title, default 'Owner'","source_type":"work_vehicle|billboard|storefront|office|yard_sign|park_sign|product|other","signage_text":"other readable text INCLUDING any road, highway, or exit number visible (e.g. 'US-281','I-35','Hwy 9')","confidence":"high|medium|low"}]}Use '' for unreadable. Never invent phone/website.`;
 async function research(l){
   // Apollo first — verified owner email (1 credit). Falls back to web search if no match.
   try{const ar=await fetch(API+'/apollo',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pass:owner.pass,company:l.company,domain:l.website||'',area:l.area||''})});const aj=await ar.json();
@@ -212,12 +226,31 @@ Return ONLY JSON:{"email":"","email_type":"personal|generic","contact_name":"","
 const VOICES={smalltown:'Small-town and personal — warm, genuine, neighborly, like one small-town business owner talking to another. First-name friendly, plainspoken, zero corporate polish. Nod to the local/personal connection (passing through the area, family nearby, small-town roots). Humble, real, human — the kind of note you actually want to answer.',warm:'Warm and casual, like a neighbor who genuinely noticed them.',professional:'Polished and professional, still personable.',brief:'Ultra-brief — 3-4 short sentences, punchy, easy to reply to.',observational:'Lead hard with the specific thing the rep saw; observation/story first.',value:'Direct and value-first; lead with one concrete PEO benefit (save time/money on payroll, benefits, or workers comp).'};
 const VOICE_KEYS=['smalltown','warm','professional','brief','observational','value'];
 function pickVoice(){const v=owner.voice||'smalltown';if(v==='rotate'){const i=(LS.get('voiceIdx',0))%VOICE_KEYS.length;LS.set('voiceIdx',i+1);return VOICE_KEYS[i];}return v;}
-async function draft(l){const s=owner;const voice=pickVoice();l.voice=voice;const prompt=`Write a SHORT first-touch email from an outside rep. VOICE/TONE: ${VOICES[voice]||VOICES.warm}
-Me: ${s.name||'(rep)'}, ${s.title||''} at ${s.company||'My PEO Pros'}. We offer: ${s.offer||'PEO — payroll, benefits, HR & workers comp for small businesses'}.
-Prospect: ${l.company} (${l.trade||'local business'})${l.contact_name?', contact '+l.contact_name:''}.
-Rep's note (USE as the angle — truck, office, or they use the product): "${l.note||''}"
-${l.neighborhood?'Area: '+l.neighborhood:''}
-Rules: ${l.contact_name?'greet '+l.contact_name:'neutral greeting "Hi there", no invented name'}; natural hook from the note (don't force "saw your trucks"); 90 words max; one soft ask for a quick call${s.calendar?' ('+s.calendar+')':''}; sign ${s.name||''}${s.phone?', '+s.phone:''}. Return ONLY: "Subject:" line then body.`;
+function autoHook(l){const a=l.neighborhood||l.area||'the area';const st=l.source_type||'';
+  const rm=(l.signage_text||'').match(/\b(?:I-?\d+|US-?\d+|Hwy\.?\s?\d+|Highway\s?\d+|FM\s?\d+|SH-?\d+|Loop\s?\d+|Route\s?\d+)\b/i);
+  const where=rm?('on '+rm[0]):('around '+a);
+  const inWhere=rm?('on '+rm[0]):('in '+a);
+  if(st==='billboard')return 'saw your billboard '+where;
+  if(st==='work_vehicle')return 'saw your truck '+where;
+  if(st==='storefront'||st==='office')return 'came across your place '+inWhere;
+  if(st==='yard_sign')return 'saw your yard sign '+inWhere;
+  if(st==='park_sign')return 'spotted your name on the plaza sign '+inWhere;
+  if(st==='product')return 'I actually use what you do';
+  return 'came across '+(l.company||'your business')+' '+where;}
+async function draft(l){const s=owner;const voice=pickVoice();l.voice=voice;
+  const hook=(l.note&&l.note.trim())?l.note.trim():autoHook(l);
+  const prompt=`Write a SHORT first-touch email from an outside PEO rep. VOICE/TONE: ${VOICES[voice]||VOICES.smalltown}
+Me: ${s.name||'(rep)'}, ${s.title||''} at ${s.company||'My PEO Pros'}.
+Prospect: ${l.company} (${l.trade||'local business'}${l.est_size?', ~'+l.est_size+' employees':''})${l.contact_name?', contact '+l.contact_name:''}.
+Opener hook (what the rep saw / why reaching out — open with this): "${hook}"${l.neighborhood?'\nArea: '+l.neighborhood:''}
+
+WHAT WE DO — follow exactly:
+- We're a PEO. NEVER lead with or center the email on PAYROLL — it dilutes the value and a payroll-only prospect isn't our fit. Payroll is one small piece; mention it only in passing, if at all.
+- Position PEO as the COMPLETE solution tailored to THIS business: big-company benefits, HR support, compliance, and especially RISK / workers' comp.
+- TAILOR to their industry + size. Guides: construction/trades -> workers' comp & class-code savings, OSHA/safety, claims, certs of insurance, multi-state crews; restaurants/retail -> turnover, ACA & hourly benefits, HR load; medical/professional -> competitive benefits to attract & keep staff, compliance; any SMB with W-2 staff -> Fortune-500-level benefits + take HR/compliance/risk off their plate.
+- Lead with the likely pain or opportunity for a ${l.trade||'business'} of ~${l.est_size||'their'} size, then PEO as the fix. One specific, relevant angle — not a feature list.
+
+Rules: ${l.contact_name?'greet '+l.contact_name+' by first name':'neutral greeting "Hi there", never invent a name'}; 90 words max; one soft ask for a quick call${s.calendar?' ('+s.calendar+')':''}; sign ${s.name||''}${s.phone?', '+s.phone:''}. Return ONLY: a "Subject:" line then the body.`;
   return tOf(await callRaw({model:RESEARCH_MODEL,max_tokens:700,messages:[{role:'user',content:[{type:'text',text:prompt}]}]})).trim();}
 
 async function maybeProcess(){if(navigator.onLine!==false&&leads.some(l=>l.status==='queued'))processQueue();}
@@ -232,8 +265,8 @@ async function processQueue(){
         const biz=(pJSON(out)?.businesses||[]).filter(b=>b.company);l.img='';
         if(!biz.length){l.status='unreadable';saveLeads();continue;}
         Object.assign(l,biz[0]);
-        for(let i=1;i<biz.length;i++)leads.unshift({...biz[i],id:'L'+Date.now()+Math.random().toString(36).slice(2,6),status:(l.note?'noted':'needs_note'),note:l.note,source:l.source,neighborhood:l.neighborhood,area:l.area,captured:l.captured});
-        if(l.note){await genEmail(l);}else{l.status='needs_note';saveLeads();if(tab==='rev')ownerReview();}
+        for(let i=1;i<biz.length;i++)leads.unshift({...biz[i],id:'L'+Date.now()+Math.random().toString(36).slice(2,6),status:'noted',note:l.note,source:l.source,neighborhood:l.neighborhood,area:l.area,captured:l.captured});
+        await genEmail(l);
       }catch(e){l.status='error';l.err=e.message;if(l.img)l.img='';saveLeads();}
       const sib=leads.find(x=>x.status==='noted');if(sib)await genEmail(sib);
     }
@@ -255,8 +288,7 @@ function ownerReview(){
   let h='';
   if(!leads.length){$('#main').innerHTML='<div class="empty"><span class="em">🗂️</span>Nothing yet. Pull the inbox or snap on the Snap tab.</div>';return;}
   if(proc.length)h+='<div class="card"><span class="spinner"></span> Working on '+proc.length+'… <span class="muted">(read → email)</span></div>';
-  h+='<div class="sec-title">📝 Needs a note ('+need.length+')</div>';
-  if(need.length)need.forEach(l=>h+=noteCard(l));else h+='<p class="muted" style="margin:0 2px 8px">None.</p>';
+  if(need.length){h+='<div class="sec-title">📝 Needs a note ('+need.length+')</div>';need.forEach(l=>h+=noteCard(l));}
   h+='<div class="sec-title">✅ Ready to send ('+ready.length+')</div>';
   if(ready.length){h+='<div class="card"><button class="btn" onclick="approveAll()">🚀 Approve &amp; send all '+ready.length+'</button></div>';ready.forEach(l=>h+=readyCard(l));}else h+='<p class="muted" style="margin:0 2px 8px">None yet.</p>';
   if(weak.length){h+='<div class="sec-title">📇 No named leader ('+weak.length+')</div><p class="muted" style="margin:0 2px 8px">Only a generic inbox (info@) — not a verified decision-maker. Kept OUT of “send all.” Re-research or type the owner’s email.</p>';weak.forEach(l=>h+=readyCard(l));}

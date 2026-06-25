@@ -10,7 +10,7 @@ export default async (req) => {
   const SCOUT_CODE = process.env.SCOUT_CODE || '';
   if (SCOUT_CODE && (b.code || '') !== SCOUT_CODE) return json({ error: 'Wrong team code — ask the person who invited you.' }, 403);
   if (!image) return json({ error: 'no image' }, 400);
-  if (!note.trim()) return json({ error: 'a note is required' }, 400);
+  // note is OPTIONAL now — if blank, the owner's device auto-derives the hook from the photo
 
   const id = 'S' + Date.now() + Math.random().toString(36).slice(2, 7);
   const sub = { id, image, mediaType, note: note.trim(), scout, neighborhood, area, captured: new Date().toISOString() };
