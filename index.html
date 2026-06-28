@@ -88,7 +88,12 @@ function getLocation(){
     $('#sub').textContent=geo.neighborhood?('📍 '+geo.neighborhood):(role==='owner'?'Owner — review & approve':'Snap & note');
   },()=>{},{enableHighAccuracy:true,timeout:8000,maximumAge:60000});
 }
-function downscale(file){return new Promise(res=>{const r=new FileReader();r.onload=()=>{const img=new Image();img.onload=()=>{const max=1024;let{width:w,height:h}=img;if(w>h&&w>max){h=h*max/w;w=max}else if(h>max){w=w*max/h;h=max}const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);res(c.toDataURL('image/jpeg',0.6))};img.onerror=()=>res(r.result);img.src=r.result};r.readAsDataURL(file)})}
+const BLUR_THRESHOLD=22; // conservative — only clearly blurry photos are dropped
+function sharpness(c){const ctx=c.getContext('2d'),w=c.width,h=c.height;const d=ctx.getImageData(0,0,w,h).data;const g=i=>0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];let s=0,s2=0,n=0;for(let y=2;y<h-2;y+=2){for(let x=2;x<w-2;x+=2){const i=(y*w+x)*4;const lap=4*g(i)-g(i-4)-g(i+4)-g(i-w*4)-g(i+w*4);s+=lap;s2+=lap*lap;n++;}}if(!n)return 999;const m=s/n;return s2/n-m*m;}
+function downscale(file){return new Promise(res=>{const r=new FileReader();r.onload=()=>{const img=new Image();img.onload=()=>{const max=1024;let{width:w,height:h}=img;if(w>h&&w>max){h=h*max/w;w=max}else if(h>max){w=w*max/h;h=max}const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);res({url:c.toDataURL('image/jpeg',0.6),sharp:sharpness(c)})};img.onerror=()=>res({url:r.result,sharp:999});img.src=r.result};r.readAsDataURL(file)})}
+// read GPS from a photo's EXIF (returns {lat,lng} or null). iOS converts HEIC->JPEG on upload, usually keeping GPS.
+function exifGPS(file){return new Promise(res=>{const r=new FileReader();r.onload=()=>{try{const v=new DataView(r.result);if(v.getUint16(0)!==0xFFD8)return res(null);let off=2;const len=v.byteLength;while(off<len){const marker=v.getUint16(off);off+=2;if(marker===0xFFE1){const start=off+2;if(v.getUint32(start)!==0x45786966)return res(null);const tiff=start+6;const little=v.getUint16(tiff)===0x4949;const r16=o=>v.getUint16(o,little),r32=o=>v.getUint32(o,little);const ifd0=tiff+r32(tiff+4);const n=r16(ifd0);let gps=0;for(let i=0;i<n;i++){const e=ifd0+2+i*12;if(r16(e)===0x8825){gps=tiff+r32(e+8);break;}}if(!gps)return res(null);const gn=r16(gps);let latR='',lngR='',lat=null,lng=null;const dms=o=>{const d=r32(o)/r32(o+4),m=r32(o+8)/r32(o+12),s=r32(o+16)/r32(o+20);return d+m/60+s/3600;};for(let i=0;i<gn;i++){const e=gps+2+i*12,tag=r16(e),vo=tiff+r32(e+8);if(tag===1)latR=String.fromCharCode(v.getUint8(e+8));else if(tag===2)lat=dms(vo);else if(tag===3)lngR=String.fromCharCode(v.getUint8(e+8));else if(tag===4)lng=dms(vo);}if(lat==null||lng==null)return res(null);if(latR==='S')lat=-lat;if(lngR==='W')lng=-lng;return res({lat,lng});}else if((marker&0xFF00)!==0xFF00)break;else off+=v.getUint16(off);}res(null);}catch(e){res(null);}};r.readAsArrayBuffer(file.slice(0,131072));});}
+async function geocode(lat,lng){try{const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=17&addressdetails=1`,{headers:{'Accept':'application/json'}});const a=(await r.json()).address||{};return{neighborhood:a.neighbourhood||a.suburb||a.quarter||a.residential||a.hamlet||a.village||a.town||a.city_district||a.city||a.county||'',area:[a.city||a.town||a.village||a.county,a.state].filter(Boolean).join(', ')};}catch(e){return{neighborhood:'',area:''};}}
 
 /* ================= ROUTER ================= */
 function render(){
@@ -113,19 +118,21 @@ function renderScout(){
   if(!scout){ $('#main').innerHTML='<div class="card"><p class="big">Quick setup</p><p class="muted">One time. Your name gets you the credit; the team code is from whoever invited you.</p><label>Your name</label><input id="scn" placeholder="First Last"><label>Team code</label><input id="sccode" placeholder="ask the person who invited you" value="'+esc(LS.get('scoutcode',''))+'"><button class="btn" onclick="saveScout()">Save</button></div>'; return; }
   if(tab==='set'){ return scoutSetup(); }
   let h='<div class="card"><p class="big">Snap a lead, '+esc(scout.split(' ')[0])+'</p><p class="muted">Just tap to snap — that\'s it. A note is optional; the app reads the photo for context (truck, billboard, storefront, highway). Add one only if you want to.</p>'+
-    '<div class="snapbtn" onclick="document.getElementById(\'file\').click()" style="margin-top:12px"><span class="em">📷</span>Tap to snap</div>'+
-    '<input id="file" type="file" accept="image/*" capture="environment" multiple style="display:none"></div>';
+    '<div class="row" style="margin-top:12px"><button class="btn secondary" onclick="document.getElementById(\'file\').click()">📷 Take photo</button><button class="btn secondary" onclick="document.getElementById(\'fileup\').click()">🖼️ Upload</button></div>'+
+    '<div class="hint" style="text-align:center">📷 = live camera (pauses music) · 🖼️ = from your camera roll (music keeps playing, multi-select)</div>'+
+    '<input id="file" type="file" accept="image/*" capture="environment" multiple style="display:none">'+
+    '<input id="fileup" type="file" accept="image/*" multiple style="display:none"></div>';
   if(outbox.length){ h+='<div class="sec-title">To send ('+outbox.length+')</div>';
     h+='<div class="card"><label>Optional note for all (leave blank — it reads the photo)</label><input id="allnote" placeholder="e.g. all along I-35 today"><button class="btn" onclick="sendAll()">📤 Send all '+outbox.length+'</button></div>';
     outbox.forEach(o=>{ h+=
     '<div class="card lead note"><img src="'+o.img+'" style="width:70px;height:70px;object-fit:cover;border-radius:10px;border:1px solid var(--line)">'+
     '<label style="margin-top:8px">Note (optional — add context only if you want)</label>'+
     '<textarea id="ob-'+o.id+'" placeholder="e.g. I use their gym · their billboard on 281">'+esc(o.note||'')+'</textarea>'+
-    '<div class="row" style="margin-top:8px"><button class="btn sm" onclick="sendOne(\''+o.id+'\')">📤 Send</button><button class="btn ghost sm" onclick="dropOut(\''+o.id+'\')">Delete</button></div></div>'; });
+    '<div class="row" style="margin-top:8px"><button class="btn sm" onclick="voiceNote(\''+o.id+'\')">🎤 Voice note</button><button class="btn secondary sm" onclick="sendOne(\''+o.id+'\')">📤 Send</button><button class="btn ghost sm" onclick="dropOut(\''+o.id+'\')">🗑️</button></div></div>'; });
   } else { h+='<div class="empty"><span class="em">📭</span>Nothing waiting. Snap a business to start.</div>'; }
   if(LS.get('sentCount',0)) h+='<p class="muted" style="text-align:center">✅ '+LS.get('sentCount',0)+' sent so far</p>';
   $('#main').innerHTML=h;
-  $('#file').addEventListener('change',onSnap);
+  $('#file').addEventListener('change',onSnap);$('#fileup').addEventListener('change',onSnap);
 }
 function scoutTab(t){tab=t;renderScout();}
 function saveScout(){const v=$('#scn').value.trim();if(!v){toast('Enter your name');return}scout=v;LS.set('scout',v);LS.set('scoutcode',($('#sccode')&&$('#sccode').value||'').trim());renderScout();}
@@ -135,19 +142,29 @@ function scoutSetup(){
     '<button class="btn" onclick="saveScoutSetup()">Save</button>'+
     '<button class="btn ghost" style="margin-top:14px" onclick="switchRole()">Switch role</button></div>';
 }
-async function onSnap(e){const files=[...e.target.files];e.target.value='';getLocation();for(const f of files){const img=await downscale(f);outbox.unshift({id:'O'+Date.now()+Math.random().toString(36).slice(2,6),img,mediaType:'image/jpeg',note:'',neighborhood:geo.neighborhood||'',area:geo.area||''});}saveOutbox();renderScout();toast('📸 '+files.length+' banked — add a note & send');}
+async function onSnap(e){const isUpload=e.target.id==='fileup';const files=[...e.target.files];e.target.value='';if(!isUpload)getLocation();let blur=0,added=0;for(const f of files){const ds=await downscale(f);if(ds.sharp<BLUR_THRESHOLD){blur++;continue;}const item={id:'O'+Date.now()+Math.random().toString(36).slice(2,6),img:ds.url,mediaType:'image/jpeg',note:'',neighborhood:isUpload?'':(geo.neighborhood||''),area:isUpload?'':(geo.area||'')};if(isUpload){const g=await exifGPS(f);if(g){item.glat=g.lat;item.glng=g.lng;}}outbox.unshift(item);added++;}saveOutbox();renderScout();toast('📸 '+added+' banked'+(blur?' · '+blur+' blurry skipped':''));}
 function dropOut(id){outbox=outbox.filter(o=>o.id!==id);saveOutbox();renderScout();}
 async function sendOne(id){
   const o=outbox.find(x=>x.id===id);if(!o)return;
   const ta=document.getElementById('ob-'+id);o.note=(ta&&ta.value||'').trim();
   saveOutbox();toast('📤 Sending…');
   try{
-    const r=await fetch(API+'/process',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({image:o.img,mediaType:o.mediaType,note:o.note,scout,code:LS.get('scoutcode',''),neighborhood:o.neighborhood,area:o.area})});
+    const r=await fetch(API+'/process',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({image:o.img,mediaType:o.mediaType,note:o.note,scout,code:LS.get('scoutcode',''),neighborhood:o.neighborhood,area:o.area,glat:o.glat,glng:o.glng})});
     const j=await r.json();
     if(!r.ok||j.error)throw new Error(j.error||'failed');
     outbox=outbox.filter(x=>x.id!==id);saveOutbox();
     LS.set('sentCount',(LS.get('sentCount',0)+1));renderScout();toast('✅ Sent to '+(owner.name||'the owner'));
   }catch(e){toast('⚠️ '+e.message,4000);}
+}
+function voiceNote(id){
+  const ta=document.getElementById('ob-'+id);if(!ta)return;
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){ta.focus();toast('Tap the 🎤 on your keyboard to talk');return;}
+  const rec=new SR();rec.lang='en-US';rec.interimResults=false;
+  toast('🎤 Listening…');
+  rec.onresult=ev=>{const t=ev.results[0][0].transcript;ta.value=(ta.value?ta.value+' ':'')+t;const o=outbox.find(x=>x.id===id);if(o){o.note=ta.value;saveOutbox();}toast('✓ Got it');};
+  rec.onerror=()=>{ta.focus();toast('Use your keyboard 🎤 to talk');};
+  try{rec.start();}catch(e){ta.focus();}
 }
 async function sendAll(){
   const shared=($('#allnote')&&$('#allnote').value||'').trim();
@@ -155,7 +172,7 @@ async function sendAll(){
   toast('📤 Sending '+items.length+'…');let ok=0;
   for(const o of items){
     const ta=document.getElementById('ob-'+o.id);o.note=(ta&&ta.value||'').trim()||shared;
-    try{const r=await fetch(API+'/process',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({image:o.img,mediaType:o.mediaType,note:o.note,scout,code:LS.get('scoutcode',''),neighborhood:o.neighborhood,area:o.area})});const j=await r.json();
+    try{const r=await fetch(API+'/process',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({image:o.img,mediaType:o.mediaType,note:o.note,scout,code:LS.get('scoutcode',''),neighborhood:o.neighborhood,area:o.area,glat:o.glat,glng:o.glng})});const j=await r.json();
       if(r.ok&&!j.error){outbox=outbox.filter(x=>x.id!==o.id);LS.set('sentCount',(LS.get('sentCount',0)+1));ok++;}else if(j.error){toast('⚠️ '+j.error,4000);}
     }catch(e){}
     saveOutbox();
@@ -176,15 +193,15 @@ function renderOwner(){
   // capture tab
   $('#main').innerHTML='<div class="card"><p class="big">Pull the team inbox</p><p class="muted">Bring in everything your scouts submitted, then process them on this device.</p>'+
     '<button class="btn" onclick="pullInbox()">⬇️ Pull team inbox</button></div>'+
-    '<div class="card"><p class="big">Or snap your own</p><div class="snapbtn" onclick="document.getElementById(\'ofile\').click()" style="margin-top:10px"><span class="em">📷</span>Tap to snap</div>'+
-    '<input id="ofile" type="file" accept="image/*" capture="environment" multiple style="display:none">'+
+    '<div class="card"><p class="big">Or snap your own</p><div class="row" style="margin-top:10px"><button class="btn secondary" onclick="document.getElementById(\'ofile\').click()">📷 Take photo</button><button class="btn secondary" onclick="document.getElementById(\'ofileup\').click()">🖼️ Upload</button></div>'+
+    '<input id="ofile" type="file" accept="image/*" capture="environment" multiple style="display:none"><input id="ofileup" type="file" accept="image/*" multiple style="display:none">'+
     '<label for="onote" style="margin-top:10px">Optional note for next snaps</label><input id="onote" placeholder="why you\'re reaching out"></div>'+
     '<div class="card"><p class="muted" id="oProc">'+ownerProcLabel()+'</p>'+(leads.some(l=>l.status==='queued')?'<button class="btn secondary" onclick="processQueue()">⚙️ Process now</button>':'')+'</div>';
-  $('#ofile').addEventListener('change',onOwnerSnap);
+  $('#ofile').addEventListener('change',onOwnerSnap);$('#ofileup').addEventListener('change',onOwnerSnap);
 }
 function ownerTab(t){tab=t;renderOwner();if(t==='rev')maybeProcess();}
 function ownerProcLabel(){const q=leads.filter(l=>l.status==='queued').length;const b=leads.filter(l=>['reading','researching','drafting'].includes(l.status)).length;const r=leads.filter(l=>l.status==='ready').length;return b?('Working on '+b+'…'):q?(q+' to process'):r?(r+' ready in Review'):'Nothing to process yet.';}
-async function onOwnerSnap(e){const files=[...e.target.files];e.target.value='';const note=($('#onote')&&$('#onote').value||'').trim();getLocation();for(const f of files){const img=await downscale(f);leads.unshift({id:'L'+Date.now()+Math.random().toString(36).slice(2,6),img,mediaType:'image/jpeg',status:'queued',note,source:(owner.name||'me'),neighborhood:geo.neighborhood||'',area:geo.area||'',captured:new Date().toISOString()});}saveLeads();renderOwner();toast('📸 '+files.length+' banked');processQueue();}
+async function onOwnerSnap(e){const isUpload=e.target.id==='ofileup';const files=[...e.target.files];e.target.value='';const note=($('#onote')&&$('#onote').value||'').trim();if(!isUpload)getLocation();let blur=0,added=0;for(const f of files){const ds=await downscale(f);if(ds.sharp<BLUR_THRESHOLD){blur++;continue;}const l={id:'L'+Date.now()+Math.random().toString(36).slice(2,6),img:ds.url,mediaType:'image/jpeg',status:'queued',note,source:(owner.name||'me'),neighborhood:isUpload?'':(geo.neighborhood||''),area:isUpload?'':(geo.area||''),captured:new Date().toISOString()};if(isUpload){const g=await exifGPS(f);if(g){l.glat=g.lat;l.glng=g.lng;}}leads.unshift(l);added++;}saveLeads();renderOwner();toast('📸 '+added+' banked'+(blur?' · '+blur+' blurry skipped':''));processQueue();}
 
 async function pullInbox(){
   if(!owner.pass){toast('Set your owner passcode in Setup');tab='set';return renderOwner();}
@@ -193,14 +210,14 @@ async function pullInbox(){
     const r=await fetch(API+'/pending?pass='+encodeURIComponent(owner.pass));
     const j=await r.json();if(!r.ok||j.error)throw new Error(j.error||'failed');
     let added=0;
-    (j.subs||[]).forEach(s=>{ if(leads.some(l=>l.srv===s.id))return; leads.unshift({id:'L'+Date.now()+Math.random().toString(36).slice(2,6),srv:s.id,img:s.image,mediaType:s.mediaType||'image/jpeg',status:'queued',note:s.note,source:s.scout||'',neighborhood:s.neighborhood||'',area:s.area||'',captured:s.captured||new Date().toISOString()}); added++; });
+    (j.subs||[]).forEach(s=>{ if(leads.some(l=>l.srv===s.id))return; leads.unshift({id:'L'+Date.now()+Math.random().toString(36).slice(2,6),srv:s.id,img:s.image,mediaType:s.mediaType||'image/jpeg',status:'queued',note:s.note,source:s.scout||'',neighborhood:s.neighborhood||'',area:s.area||'',glat:s.glat,glng:s.glng,captured:s.captured||new Date().toISOString()}); added++; });
     saveLeads();renderOwner();toast(added?('⬇️ Pulled '+added+' — processing'):'Inbox empty');if(added)processQueue();
   }catch(e){toast('⚠️ '+e.message,4000);}
 }
 
 /* ---- owner client-side AI (key stays here) ---- */
 const RESEARCH_MODEL='claude-haiku-4-5-20251001';
-async function callRaw(body){if(!owner.anthropic)throw new Error('Add your Anthropic key in Setup');const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':owner.anthropic,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify(body)});const j=await r.json();if(j.error)throw new Error(j.error.message||'API error');return j;}
+async function callRaw(body){body.__pass=owner.pass||'';const r=await fetch(API+'/ai',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});const j=await r.json();if(j.error)throw new Error(j.error.message||j.error||'AI error');return j;}
 const tOf=j=>(j.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('');
 function pJSON(t){try{return JSON.parse(t)}catch(e){}const m=t&&t.match(/\{[\s\S]*\}/);if(m){try{return JSON.parse(m[0])}catch(e){}}return null;}
 const VISION=`You are a field sales scout. Identify EVERY distinct business in the photo (a park/plaza sign may list several). Return ONLY JSON:{"businesses":[{"company":"exact name","trade":"industry","phone":"if visible else ''","website":"if visible else ''","services":["services"],"contact_title":"likely title, default 'Owner'","source_type":"work_vehicle|billboard|storefront|office|yard_sign|park_sign|product|other","signage_text":"other readable text INCLUDING any road, highway, or exit number visible (e.g. 'US-281','I-35','Hwy 9')","confidence":"high|medium|low"}]}Use '' for unreadable. Never invent phone/website.`;
@@ -208,7 +225,11 @@ async function research(l){
   // Apollo first — verified owner email (1 credit). Falls back to web search if no match.
   try{const ar=await fetch(API+'/apollo',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pass:owner.pass,company:l.company,domain:l.website||'',area:l.area||''})});const aj=await ar.json();
     if(aj&&aj.found&&aj.email){return{email:aj.email,email_type:aj.email_type||'personal',contact_name:aj.contact_name||'',contact_title:aj.contact_title||l.contact_title,email_confidence:'apollo',email_source:aj.source||'Apollo',scope:aj.scope||'',est_size:aj.est_size||'',peo_fit:(aj.peo_fit||'').toLowerCase(),fit_reason:aj.fit_reason||''};}
+    if(aj&&aj.peo_fit){return{email:'',scope:aj.scope||'',est_size:aj.est_size||'',peo_fit:(aj.peo_fit||'').toLowerCase(),fit_reason:aj.fit_reason||''};} // fit verdict w/o email -> lets genEmail auto-toss 'none'
   }catch(e){}
+  return {email:''}; // no auto web-search — keeps cost to ~1 Apollo credit per lead
+}
+async function deepSearch(l){
   const prompt=`Research this business so a PEO/HR rep can (a) decide if it's a fit and (b) reach the right person. Open the WEBSITE first (Contact/About/Team), then the web (Google Business, directories, social, news).
 Business: ${l.company}
 ${l.website?'Website: '+l.website:''}
@@ -222,7 +243,8 @@ TASK 2 — FIT PROFILE (PEO sweet spot = a U.S. small/mid business, ~5-100 W-2 e
 - peo_fit: "high" | "medium" | "low" | "none" (national chains, public companies, big-brand franchises, govt -> low/none)
 - fit_reason: one short phrase
 Return ONLY JSON:{"email":"","email_type":"personal|generic","contact_name":"","title":"","confidence":"high|medium|low","source":"url","scope":"","est_size":"","peo_fit":"","fit_reason":""}`;
-  try{const j=await callRaw({model:RESEARCH_MODEL,max_tokens:1400,tools:[{type:'web_search_20250305',name:'web_search',max_uses:3}],messages:[{role:'user',content:[{type:'text',text:prompt}]}]});const r=pJSON(tOf(j))||{};return{email:(r.email||'').trim(),email_type:(r.email_type||'').trim(),contact_name:(r.contact_name||'').trim(),contact_title:(r.title||'').trim()||l.contact_title,email_confidence:r.confidence||'',email_source:(r.source||'').trim(),scope:(r.scope||'').trim(),est_size:(r.est_size||'').trim(),peo_fit:(r.peo_fit||'').trim().toLowerCase(),fit_reason:(r.fit_reason||'').trim()};}catch(e){return{email:''};}}
+  try{const j=await callRaw({model:RESEARCH_MODEL,max_tokens:1400,tools:[{type:'web_search_20250305',name:'web_search',max_uses:2}],messages:[{role:'user',content:[{type:'text',text:prompt}]}]});const r=pJSON(tOf(j))||{};return{email:(r.email||'').trim(),email_type:(r.email_type||'').trim(),contact_name:(r.contact_name||'').trim(),contact_title:(r.title||'').trim()||l.contact_title,email_confidence:r.confidence||'',email_source:(r.source||'').trim(),scope:(r.scope||'').trim(),est_size:(r.est_size||'').trim(),peo_fit:(r.peo_fit||'').trim().toLowerCase(),fit_reason:(r.fit_reason||'').trim()};}catch(e){return{email:''};}
+}
 const VOICES={smalltown:'Small-town and personal — warm, genuine, neighborly, like one small-town business owner talking to another. First-name friendly, plainspoken, zero corporate polish. Nod to the local/personal connection (passing through the area, family nearby, small-town roots). Humble, real, human — the kind of note you actually want to answer.',warm:'Warm and casual, like a neighbor who genuinely noticed them.',professional:'Polished and professional, still personable.',brief:'Ultra-brief — 3-4 short sentences, punchy, easy to reply to.',observational:'Lead hard with the specific thing the rep saw; observation/story first.',value:'Direct and value-first; lead with one concrete PEO benefit (save time/money on payroll, benefits, or workers comp).'};
 const VOICE_KEYS=['smalltown','warm','professional','brief','observational','value'];
 function pickVoice(){const v=owner.voice||'smalltown';if(v==='rotate'){const i=(LS.get('voiceIdx',0))%VOICE_KEYS.length;LS.set('voiceIdx',i+1);return VOICE_KEYS[i];}return v;}
@@ -265,14 +287,14 @@ async function processQueue(){
         const biz=(pJSON(out)?.businesses||[]).filter(b=>b.company);l.img='';
         if(!biz.length){l.status='unreadable';saveLeads();continue;}
         Object.assign(l,biz[0]);
-        for(let i=1;i<biz.length;i++)leads.unshift({...biz[i],id:'L'+Date.now()+Math.random().toString(36).slice(2,6),status:'noted',note:l.note,source:l.source,neighborhood:l.neighborhood,area:l.area,captured:l.captured});
+        for(let i=1;i<biz.length;i++)leads.unshift({...biz[i],id:'L'+Date.now()+Math.random().toString(36).slice(2,6),status:'noted',note:l.note,source:l.source,neighborhood:l.neighborhood,area:l.area,glat:l.glat,glng:l.glng,captured:l.captured});
         await genEmail(l);
       }catch(e){l.status='error';l.err=e.message;if(l.img)l.img='';saveLeads();}
       const sib=leads.find(x=>x.status==='noted');if(sib)await genEmail(sib);
     }
   }finally{processing=false;if(tab==='rev')ownerReview();else renderOwner();}
 }
-async function genEmail(l){l.status='researching';saveLeads();if(tab==='rev')ownerReview();Object.assign(l,await research(l));l.research_tries=1;
+async function genEmail(l){if(l.glat&&l.glng&&!l.neighborhood){const g=await geocode(l.glat,l.glng);l.neighborhood=g.neighborhood;l.area=l.area||g.area;}l.status='researching';saveLeads();if(tab==='rev')ownerReview();Object.assign(l,await research(l));l.research_tries=1;
   if(l.peo_fit==='none'){l.status='Skipped';l.skip_reason='auto-filtered: not a PEO fit'+(l.scope?' ('+l.scope+')':'');saveLeads();clearSrv(l);if(tab==='rev')ownerReview();return;}
   const dup=dupeExisting(l);if(dup){l.status='Skipped';l.skip_reason='auto-rejected: duplicate'+(dup.source?' — first by '+dup.source:'');saveLeads();clearSrv(l);if(tab==='rev')ownerReview();return;}
   l.status='drafting';saveLeads();if(tab==='rev')ownerReview();try{l.email_draft=await draft(l);}catch(e){l.email_draft='';}l.status='ready';saveLeads();if(tab==='rev')ownerReview();}
@@ -307,10 +329,10 @@ function recipLine(l){const r=l.email_type==='generic'?'⚠️ generic inbox —
 function dupeOf(l){const e=(l.email||'').toLowerCase();const c=(l.company||'').toLowerCase().replace(/[^a-z0-9]/g,'');return leads.find(x=>x!==l&&['Sent','Filed'].includes(x.status)&&((e&&(x.email||'').toLowerCase()===e)||(c&&(x.company||'').toLowerCase().replace(/[^a-z0-9]/g,'')===c)));}
 function dupeExisting(l){const e=(l.email||'').toLowerCase();const c=(l.company||'').toLowerCase().replace(/[^a-z0-9]/g,'');return leads.find(x=>x!==l&&['ready','Sent','Filed'].includes(x.status)&&((e&&(x.email||'').toLowerCase()===e)||(c&&(x.company||'').toLowerCase().replace(/[^a-z0-9]/g,'')===c)));}
 function readyCard(l){const dup=dupeOf(l);const dupB=dup?'<div class="warn">🔁 Likely duplicate — first credited to <b>'+esc(dup.source||'?')+'</b>'+(dup.captured?' ('+esc(dup.captured.slice(0,10))+')':'')+'. Kept out of “send all.”</div>':'';return '<div class="card lead"><p class="big">'+esc(l.company)+'</p>'+metaR(l)+dupB+profileLine(l)+'<label style="margin-top:8px">Send to (tap to edit)</label><input id="em-'+l.id+'" value="'+esc(l.email)+'" inputmode="email" oninput="setF(\''+l.id+'\',\'email\',this.value)">'+recipLine(l)+(l.voice?'<div class="hint">🎙️ voice: '+esc(l.voice)+'</div>':'')+(l.note?'<div class="kv"><b>Note</b><span>'+esc(l.note)+'</span></div>':'')+'<label style="margin-top:8px">Opener</label><textarea class="op" id="ta-'+l.id+'" oninput="setF(\''+l.id+'\',\'email_draft\',this.value)">'+esc(l.email_draft||'')+'</textarea><div class="row" style="margin-top:10px"><button class="btn sm" onclick="approveOne(\''+l.id+'\')">✅ Approve &amp; send</button><button class="btn ghost sm" onclick="skipLead(\''+l.id+'\')">Skip</button></div></div>'}
-function awaitCard(l){const t=l.research_tries||1,cap=t>=3;return '<div class="card lead note"><p class="big">'+esc(l.company)+'</p>'+metaR(l)+(l.website?'<div class="kv"><b>Web</b><span>'+esc(l.website)+'</span></div>':'')+'<div class="kv"><b>Email search</b><span>'+(cap?'none found':t+'/3')+'</span></div><label style="margin-top:8px">Know their email?</label><input id="mn-'+l.id+'" placeholder="owner@company.com" inputmode="email"><div class="row" style="margin-top:8px"><button class="btn sm" onclick="manEmail(\''+l.id+'\')">✅ Use it</button>'+(cap?'':'<button class="btn ghost sm" onclick="reDo(\''+l.id+'\')">🔁 Retry</button>')+'<button class="btn ghost sm" onclick="skipLead(\''+l.id+'\')">Discard</button></div></div>'}
+function awaitCard(l){const t=l.research_tries||1,cap=t>=3;return '<div class="card lead note"><p class="big">'+esc(l.company)+'</p>'+metaR(l)+(l.website?'<div class="kv"><b>Web</b><span>'+esc(l.website)+'</span></div>':'')+'<div class="kv"><b>Email search</b><span>'+(cap?'none found':t+'/3')+'</span></div><label style="margin-top:8px">Know their email?</label><input id="mn-'+l.id+'" placeholder="owner@company.com" inputmode="email"><div class="row" style="margin-top:8px"><button class="btn sm" onclick="manEmail(\''+l.id+'\')">✅ Use it</button>'+(cap?'':'<button class="btn ghost sm" onclick="reDo(\''+l.id+'\')">🔎 Deep search ~5¢</button>')+'<button class="btn ghost sm" onclick="skipLead(\''+l.id+'\')">Discard</button></div></div>'}
 function setF(id,f,v){const l=leads.find(x=>x.id===id);if(l){l[f]=v;saveLeads()}}
 async function submitNote(id){const l=leads.find(x=>x.id===id);if(!l)return;const n=(document.getElementById('nt-'+id).value||'').trim();if(!n){toast('Add a note');return}l.note=n;saveLeads();await genEmail(l);ownerReview();}
-async function reDo(id){const l=leads.find(x=>x.id===id);if(!l||(l.research_tries||1)>=3)return;l.research_tries=(l.research_tries||1)+1;l.status='researching';saveLeads();ownerReview();Object.assign(l,await research(l));if(l.email){l.status='drafting';saveLeads();ownerReview();try{l.email_draft=await draft(l)}catch(e){}}l.status='ready';saveLeads();ownerReview();toast(l.email?'✅ Found':'Still none');}
+async function reDo(id){const l=leads.find(x=>x.id===id);if(!l||(l.research_tries||1)>=3)return;l.research_tries=(l.research_tries||1)+1;l.status='researching';saveLeads();ownerReview();Object.assign(l,await deepSearch(l));if(l.email){l.status='drafting';saveLeads();ownerReview();try{l.email_draft=await draft(l)}catch(e){}}l.status='ready';saveLeads();ownerReview();toast(l.email?'✅ Found':'Still none');}
 async function manEmail(id){const l=leads.find(x=>x.id===id);if(!l)return;const v=(document.getElementById('mn-'+id).value||'').trim();if(!/.+@.+\..+/.test(v)){toast('Valid email?');return}l.email=v;l.email_type='manual';if(!l.email_draft){l.status='drafting';saveLeads();ownerReview();try{l.email_draft=await draft(l)}catch(e){}}l.status='ready';saveLeads();ownerReview();}
 async function clearSrv(l){if(l.srv){try{await fetch(API+'/approve',{method:'POST',headers:ownerHdr(),body:JSON.stringify({id:l.srv})});}catch(e){}}}
 async function approveOne(id){const l=leads.find(x=>x.id===id);if(!l)return;l.status='Sent';saveLeads();await pushOT(l);if(owner.send_method==='instantly')await enrollInstantly(l);await clearSrv(l);ownerReview();toast('✅ Sent: '+l.company);}
@@ -329,10 +351,8 @@ async function enrollInstantly(l){
 }
 
 function ownerSetup(){
-  $('#main').innerHTML='<div class="card"><p class="big">Owner setup</p><p class="muted">Your passcode unlocks the team inbox. Your AI key powers the reading/drafting and stays on this device only.</p>'+
-    '<label>Owner passcode (matches Netlify setting)</label><input id="o_pass" type="password" value="'+esc(owner.pass||'')+'">'+
-    '<label>Anthropic API key</label><input id="o_key" type="password" value="'+esc(owner.anthropic||'')+'" placeholder="sk-ant-...">'+
-    '<label>Photo-reading model</label><select id="o_model"><option value="claude-sonnet-4-6">Sonnet 4.6 (recommended)</option><option value="claude-opus-4-8">Opus 4.8</option><option value="claude-haiku-4-5-20251001">Haiku 4.5 (cheap)</option></select></div>'+
+  $('#main').innerHTML='<div class="card"><p class="big">Owner login</p><p class="muted">Just your passcode — that\'s it. Your AI keys live on the server now, so you never re-enter them, even if the app logs out.</p>'+
+    '<label>Owner passcode</label><input id="o_pass" type="password" value="'+esc(owner.pass||'')+'"></div>'+
     '<div class="card"><p class="big">Sender (the outreach is from)</p><label>Name</label><input id="o_name" value="'+esc(owner.name||'')+'"><label>Company</label><input id="o_company" value="'+esc(owner.company||'')+'"><label>Title</label><input id="o_title" value="'+esc(owner.title||'')+'"><label>Phone</label><input id="o_phone" value="'+esc(owner.phone||'')+'"><label>Booking link</label><input id="o_cal" value="'+esc(owner.calendar||'')+'"><label>What you offer</label><input id="o_offer" value="'+esc(owner.offer||'')+'"></div>'+
     '<div class="card"><label>OT Inbound Webhook URL</label><input id="o_hook" value="'+esc(owner.ot_webhook||'')+'"></div>'+
     '<div class="card"><p class="big">Email voice &amp; sending</p>'+
@@ -341,11 +361,10 @@ function ownerSetup(){
     '<label>Instantly campaign ID (when warm)</label><input id="o_camp" value="'+esc(owner.instantly_campaign||'')+'" placeholder="paste your Instantly campaign id">'+
     '<div class="hint">Switch to Instantly only after warmup. OT still files the contact; Instantly does the sending. Also set INSTANTLY_API_KEY in Netlify env.</div></div>'+
     '<button class="btn" onclick="saveOwner()">💾 Save</button><button class="btn ghost" style="margin-top:10px" onclick="switchRole()">Switch role</button>';
-  if(owner.model)$('#o_model').value=owner.model;
   $('#o_voice').value=owner.voice||'smalltown';
   if(owner.send_method)$('#o_method').value=owner.send_method;
 }
-function saveOwner(){owner={...owner,pass:$('#o_pass').value.trim(),anthropic:$('#o_key').value.trim(),model:$('#o_model').value,name:$('#o_name').value.trim(),company:$('#o_company').value.trim(),title:$('#o_title').value.trim(),phone:$('#o_phone').value.trim(),calendar:$('#o_cal').value.trim(),offer:$('#o_offer').value.trim(),ot_webhook:$('#o_hook').value.trim(),voice:$('#o_voice').value,send_method:$('#o_method').value,instantly_campaign:$('#o_camp').value.trim()};LS.set('owner',owner);toast('✅ Saved');}
+function saveOwner(){owner={...owner,pass:$('#o_pass').value.trim(),name:$('#o_name').value.trim(),company:$('#o_company').value.trim(),title:$('#o_title').value.trim(),phone:$('#o_phone').value.trim(),calendar:$('#o_cal').value.trim(),offer:$('#o_offer').value.trim(),ot_webhook:$('#o_hook').value.trim(),voice:$('#o_voice').value,send_method:$('#o_method').value,instantly_campaign:$('#o_camp').value.trim()};LS.set('owner',owner);toast('✅ Saved');}
 function switchRole(){if(!confirm('Switch role on this device?'))return;role='';LS.set('role','');tab='cap';render();}
 
 /* ---------- init ---------- */

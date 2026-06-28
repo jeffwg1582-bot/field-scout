@@ -43,10 +43,30 @@ export default async (req) => {
 
     const org = pick.organization || {};
     const emp = Number(org.estimated_num_employees || 0);
+    const industry = (org.industry || '').toLowerCase();
+    const isPublic = !!(org.publicly_traded_symbol || org.publicly_traded_exchange);
 
-    // 2) enrich the picked person to reveal the work email (1 credit)
+    // ---- BEST-FIT RULES (judged from the FREE search — NO credit spent yet) ----
+    // PEO sweet spot = independent U.S. SMB, ~5-100 W-2 employees, a reachable owner.
+    // Toss the obvious misfits here so we never pay to reveal a Walmart/chain email.
+    const BAD_INDUSTRY = /staffing|recruiting|professional employer|government|public administration|education|religious/;
+    let peo_fit, scope, fit_reason;
+    if (isPublic)                         { peo_fit = 'none'; scope = 'public company';        fit_reason = 'publicly traded'; }
+    else if (emp > 500)                   { peo_fit = 'none'; scope = 'national / large';      fit_reason = emp + ' employees (too big)'; }
+    else if (BAD_INDUSTRY.test(industry)) { peo_fit = 'none'; scope = 'out-of-profile';        fit_reason = org.industry || 'industry'; }
+    else if (emp > 250)                   { peo_fit = 'low';  scope = 'regional / large';      fit_reason = emp + ' employees'; }
+    else if (emp >= 5 && emp <= 100)      { peo_fit = 'high'; scope = 'local independent';     fit_reason = emp + ' employees'; }
+    else if (emp >= 2)                     { peo_fit = 'medium'; scope = 'local independent';   fit_reason = emp + ' employees'; }
+    else if (emp === 1)                   { peo_fit = 'low';  scope = 'solo / owner-operator'; fit_reason = 'solo operator (few/no W-2 staff)'; }
+    else                                  { peo_fit = 'medium'; scope = 'local independent';   fit_reason = 'size unknown'; }
+    const est_size = emp ? String(emp) : '';
+
+    // TOSS non-fits for FREE — return the verdict without spending an enrich credit.
+    if (peo_fit === 'none') return json({ found: false, peo_fit, scope, est_size, fit_reason }, 200);
+
+    // 2) good fit — enrich the picked person to reveal the work email (1 credit)
     const mr = await fetch(BASE + '/people/match', { method: 'POST', headers: H, body: JSON.stringify({ id: pick.id }) });
-    if (!mr.ok) return json({ found: false }, 200);
+    if (!mr.ok) return json({ found: false, peo_fit, scope, est_size, fit_reason }, 200);
     const mj = await mr.json();
     const per = mj.person || {};
     let email = per.email || '';
@@ -56,15 +76,12 @@ export default async (req) => {
     const title = per.title || pick.title || '';
     // LEADERSHIP-ONLY: reject anyone who isn't a decision-maker
     const LEAD = /owner|president|ceo|founder|principal|partner|proprietor|managing|general manager|\bgm\b|vice president|\bvp\b|director|chief|co-?owner/i;
-    let peo_fit = '';
-    if (emp) peo_fit = (emp >= 5 && emp <= 100) ? 'high' : (emp <= 4) ? 'low' : (emp <= 500) ? 'medium' : 'low';
 
-    if (!email || !LEAD.test(title)) return json({ found: false, note: 'no leadership email' }, 200);
+    if (!email || !LEAD.test(title)) return json({ found: false, peo_fit, scope, est_size, fit_reason, note: 'no leadership email' }, 200);
     return json({
       found: true, email, email_type: 'personal',
       contact_name: name, contact_title: title,
-      scope: 'local independent', est_size: emp ? String(emp) : '',
-      peo_fit, fit_reason: emp ? (emp + ' employees') : '', source: 'Apollo verified',
+      scope, est_size, peo_fit, fit_reason, source: 'Apollo verified',
     }, 200);
   } catch (e) {
     return json({ found: false }, 200);
