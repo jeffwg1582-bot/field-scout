@@ -9,6 +9,8 @@
 <meta name="theme-color" content="#0b3d2e">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%230b3d2e'/%3E%3Ctext x='90' y='120' font-size='90' text-anchor='middle'%3E%F0%9F%93%B8%3C/text%3E%3C/svg%3E">
 <title>Field Scout</title>
+<!-- v5.0 — field notes + ideas -->
+
 <style>
   :root{--bg:#0b1f17;--card:#11271d;--line:#1f4232;--green:#1db876;--text:#eaf3ee;--muted:#8fb0a1;--accent:#ffd166;--danger:#ff6b6b;--radius:16px}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -185,13 +187,21 @@ function ownerHdr(){return {'content-type':'application/json','x-owner-pass':own
 function renderOwner(){
   $('#sub').textContent=geo.neighborhood?('📍 '+geo.neighborhood):'Owner — review & approve';
   const ready=leads.filter(l=>l.status==='ready'&&l.email).length;
+  const attn=leads.filter(l=>['error','unreadable'].includes(l.status)).length;
   $('#tabbar').innerHTML='<button class="'+(tab==='cap'?'active':'')+'" onclick="ownerTab(\'cap\')"><span class="ic">📸</span>Snap</button>'+
-    '<button class="'+(tab==='rev'?'active':'')+'" onclick="ownerTab(\'rev\')"><span class="ic">📋</span>Review'+(ready?'<span class="badge">'+ready+'</span>':'')+'</button>'+
+    '<button class="'+(tab==='rev'?'active':'')+'" onclick="ownerTab(\'rev\')"><span class="ic">📋</span>Review'+((ready+attn)?'<span class="badge">'+(ready+attn)+'</span>':'')+'</button>'+
+    '<button class="'+(tab==='idea'?'active':'')+'" onclick="ownerTab(\'idea\')"><span class="ic">💡</span>Ideas</button>'+
     '<button class="'+(tab==='set'?'active':'')+'" onclick="ownerTab(\'set\')"><span class="ic">⚙️</span>Setup</button>';
   if(tab==='set') return ownerSetup();
   if(tab==='rev') return ownerReview();
-  // capture tab
-  $('#main').innerHTML='<div class="card"><p class="big">Pull the team inbox</p><p class="muted">Bring in everything your scouts submitted, then process them on this device.</p>'+
+  if(tab==='idea') return ownerIdeas();
+  // capture tab — preserve an in-progress field note across re-renders
+  const keepNote=($('#fnote')&&$('#fnote').value)||'';
+  $('#main').innerHTML='<div class="card"><p class="big">🎤 Field note</p><p class="muted">Missed the pic? Just say it — "bunch of trucks with Jim Bob Plumbing at the QuikTrip on 281" becomes a lead. "I have an idea…" gets filed under 💡 Ideas. Or say "Hey Siri, field note" without even opening the app.</p>'+
+    '<button class="btn" id="micbtn" onclick="ownerMic()">🎤 Tap &amp; talk</button>'+
+    '<textarea id="fnote" placeholder="…or type it here">'+esc(keepNote)+'</textarea>'+
+    '<button class="btn secondary" onclick="fileNote()">✅ File it</button></div>'+
+    '<div class="card"><p class="big">Pull the team inbox</p><p class="muted">Bring in everything your scouts submitted — photos and Siri notes — then process them on this device.</p>'+
     '<button class="btn" onclick="pullInbox()">⬇️ Pull team inbox</button></div>'+
     '<div class="card"><p class="big">Or snap your own</p><div class="row" style="margin-top:10px"><button class="btn secondary" onclick="document.getElementById(\'ofile\').click()">📷 Take photo</button><button class="btn secondary" onclick="document.getElementById(\'ofileup\').click()">🖼️ Upload</button></div>'+
     '<input id="ofile" type="file" accept="image/*" capture="environment" multiple style="display:none"><input id="ofileup" type="file" accept="image/*" multiple style="display:none">'+
@@ -212,9 +222,85 @@ async function pullInbox(){
     const j=await r.json();if(!r.ok||j.error)throw new Error(j.error||'failed');
     let added=0;
     (j.subs||[]).forEach(s=>{ if(leads.some(l=>l.srv===s.id))return; leads.unshift({id:'L'+Date.now()+Math.random().toString(36).slice(2,6),srv:s.id,img:s.image,mediaType:s.mediaType||'image/jpeg',status:'queued',note:s.note,source:s.scout||'',neighborhood:s.neighborhood||'',area:s.area||'',glat:s.glat,glng:s.glng,captured:s.captured||new Date().toISOString()}); added++; });
-    saveLeads();renderOwner();toast(added?('⬇️ Pulled '+added+' — processing'):'Inbox empty');if(added)processQueue();
+    saveLeads();
+    // Siri / voice field-notes waiting on the server
+    let notes=0;
+    try{
+      const nr=await fetch(API+'/note',{method:'POST',headers:ownerHdr(),body:JSON.stringify({op:'list'})});
+      const nj=await nr.json();
+      for(const n of (nj.notes||[])){
+        try{await ingestNote({text:n.text,lat:n.lat,lng:n.lng,captured:n.captured,via:n.via});
+          await fetch(API+'/note',{method:'POST',headers:ownerHdr(),body:JSON.stringify({op:'del',id:n.id})});notes++;}
+        catch(e){toast('⚠️ Note failed: '+e.message,4000);}
+      }
+    }catch(e){}
+    renderOwner();toast((added||notes)?('⬇️ Pulled '+added+' photo'+(added===1?'':'s')+(notes?' + '+notes+' note'+(notes===1?'':'s'):'')+' — processing'):'Inbox empty');if(added)processQueue();
   }catch(e){toast('⚠️ '+e.message,4000);}
 }
+
+/* ---- field notes: mic → classify → lead or idea ---- */
+let recActive=null;
+function ownerMic(){
+  const btn=$('#micbtn');
+  if(recActive){try{recActive.stop()}catch(e){}recActive=null;if(btn)btn.textContent='🎤 Tap & talk';return;}
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){const ta=$('#fnote');if(ta)ta.focus();toast('Tap the 🎤 on your keyboard to talk');return;}
+  const rec=new SR();rec.lang='en-US';rec.interimResults=true;rec.continuous=true;
+  const base=($('#fnote')&&$('#fnote').value)?($('#fnote').value+' '):'';
+  recActive=rec;if(btn)btn.textContent='⏹️ Stop & keep';toast('🎤 Listening — talk, then tap Stop');
+  rec.onresult=ev=>{let fin='',interim='';for(let i=0;i<ev.results.length;i++){const r=ev.results[i];if(r.isFinal)fin+=r[0].transcript+' ';else interim+=r[0].transcript;}const ta=$('#fnote');if(ta)ta.value=(base+fin+interim).trim();};
+  rec.onend=()=>{recActive=null;const b=$('#micbtn');if(b)b.textContent='🎤 Tap & talk';};
+  rec.onerror=()=>{toast('Mic hiccup — the keyboard 🎤 works too');};
+  try{rec.start();}catch(e){recActive=null;}
+}
+async function fileNote(){
+  if(recActive){try{recActive.stop()}catch(e){}recActive=null;}
+  const ta=$('#fnote');const text=(ta&&ta.value||'').trim();
+  if(!text){toast('Say or type something first');return;}
+  if(navigator.onLine===false){toast('⚠️ No signal — try again in a bit',4000);return;}
+  if(ta)ta.value='';toast('🧠 Filing…');
+  try{await ingestNote({text,lat:geo.lat,lng:geo.lng,captured:new Date().toISOString(),via:'app'});}
+  catch(e){if(ta)ta.value=text;toast('⚠️ '+e.message,4000);}
+}
+const CLASSIFY=`You are the intake brain for an outside PEO sales rep's voice notes, dictated while driving. Classify the note. Return ONLY JSON:
+{"businesses":[{"company":"business name as heard","trade":"industry if inferable else ''","place":"spot mentioned (store, road, town) else ''","hook":"first-person past-tense line of what the rep saw, e.g. 'saw a fleet of your trucks at the QuikTrip on 281'"}],
+"idea":{"title":"short title","category":"app-idea|business-idea|todo|reminder|other","details":"the note, cleaned up"}}
+Rules: a specific business the rep SPOTTED (trucks, signs, storefront, job site) -> businesses entry; several named -> several entries. An idea, to-do, reminder, or general thought -> idea (else idea:null). One note can produce both. If it names no business and no clear idea, file the whole note as idea, category "other". NEVER invent a company name.`;
+async function ingestNote(n){
+  const j=await callRaw({model:RESEARCH_MODEL,max_tokens:700,messages:[{role:'user',content:[{type:'text',text:CLASSIFY+'\n\nNOTE: "'+n.text.replace(/"/g,"'")+'"'}]}]});
+  const r=pJSON(tOf(j))||{};
+  let loc={neighborhood:geo.neighborhood||'',area:geo.area||''};
+  if(n.lat&&n.lng){const g=await geocode(n.lat,n.lng);if(g.neighborhood||g.area)loc=g;}
+  let made=0;
+  for(const b of (r.businesses||[])){
+    if(!b.company)continue;
+    const l={id:'L'+Date.now()+Math.random().toString(36).slice(2,6),img:'',status:'researching',company:b.company,trade:b.trade||'',contact_title:'Owner',source_type:'note',signage_text:b.place||'',note:(b.hook||n.text),source:(owner.name||'me'),neighborhood:loc.neighborhood,area:loc.area,captured:n.captured||new Date().toISOString()};
+    leads.unshift(l);saveLeads();made++;
+    await genEmail(l);
+  }
+  if(r.idea&&(r.idea.title||r.idea.details)){
+    try{const rr=await fetch(API+'/note',{method:'POST',headers:ownerHdr(),body:JSON.stringify({op:'idea',idea:{...r.idea,captured:n.captured}})});const jj=await rr.json();if(jj.error)throw new Error(jj.error);toast('💡 Filed: '+(r.idea.title||'idea'));}
+    catch(e){toast('⚠️ Idea not saved: '+e.message,4000);}
+  }
+  if(made)toast('✅ '+made+' lead'+(made>1?'s':'')+' from your note — check Review');
+  else if(!r.idea)toast('Couldn\'t make a lead or an idea of that one — try rewording',4000);
+  if(tab==='cap'&&role==='owner')renderOwner();
+}
+async function ownerIdeas(){
+  $('#main').innerHTML='<div class="card"><span class="spinner"></span> Loading ideas…</div>';
+  let ideas=[];
+  try{const r=await fetch(API+'/note',{method:'POST',headers:ownerHdr(),body:JSON.stringify({op:'ideas'})});const j=await r.json();if(!r.ok||j.error)throw new Error(j.error||'failed');ideas=j.ideas||[];}
+  catch(e){$('#main').innerHTML='<div class="card"><div class="warn">⚠️ '+esc(e.message)+'</div></div>';return;}
+  let h='<div class="card"><p class="big">💡 Ideas &amp; reminders</p><p class="muted">Filed from your field notes. Claude also gives you a morning rundown of anything new.</p>'+
+    '<label>Add one</label><textarea id="newidea" placeholder="idea · todo · reminder — or a business you spotted"></textarea><button class="btn secondary" onclick="addIdea()">➕ File it</button></div>';
+  if(!ideas.length)h+='<div class="empty"><span class="em">💡</span>Nothing filed yet. Say "I have an idea…" into the mic.</div>';
+  ideas.forEach(i=>{h+='<div class="card lead note"><p class="big">'+esc(i.title||'')+'</p><span class="pill">'+esc(i.category||'idea')+'</span><span class="pill">🗓️ '+esc((i.captured||'').slice(0,10))+'</span>'+(i.details?'<p class="muted" style="margin:8px 0 0">'+esc(i.details)+'</p>':'')+
+    '<div class="row" style="margin-top:10px"><button class="btn secondary sm" onclick="archIdea(\''+i.id+'\')">✅ Done / archive</button><button class="btn ghost sm" onclick="delIdea(\''+i.id+'\')">🗑️</button></div></div>';});
+  $('#main').innerHTML=h;
+}
+async function addIdea(){const t=($('#newidea')&&$('#newidea').value||'').trim();if(!t){toast('Type something first');return;}toast('🧠 Filing…');try{await ingestNote({text:t,captured:new Date().toISOString(),via:'app'});}catch(e){toast('⚠️ '+e.message,4000);}if(tab==='idea')ownerIdeas();}
+async function archIdea(id){try{await fetch(API+'/note',{method:'POST',headers:ownerHdr(),body:JSON.stringify({op:'idea-arch',id})});}catch(e){}ownerIdeas();}
+async function delIdea(id){if(!confirm('Delete this idea?'))return;try{await fetch(API+'/note',{method:'POST',headers:ownerHdr(),body:JSON.stringify({op:'idea-del',id})});}catch(e){}ownerIdeas();}
 
 /* ---- owner client-side AI (key stays here) ---- */
 const RESEARCH_MODEL='claude-haiku-4-5-20251001';
@@ -278,7 +364,9 @@ Rules: ${l.contact_name?'greet '+l.contact_name+' by first name':'neutral greeti
 
 async function maybeProcess(){if(navigator.onLine!==false&&leads.some(l=>l.status==='queued'))processQueue();}
 async function processQueue(){
-  if(processing)return;processing=true;if(tab==='cap'){const e=$('#oProc');if(e)e.innerHTML='<span class="spinner"></span> Working…';}
+  if(processing)return;
+  if(navigator.onLine===false){toast('⚠️ No signal — your snaps are banked, will process when you\'re back',4000);return;}
+  processing=true;if(tab==='cap'){const e=$('#oProc');if(e)e.innerHTML='<span class="spinner"></span> Working…';}
   try{
     while(true){
       const l=leads.find(x=>x.status==='queued');if(!l)break;
@@ -293,6 +381,8 @@ async function processQueue(){
       }catch(e){l.status='error';l.err=e.message;if(l.img)l.img='';saveLeads();}
       const sib=leads.find(x=>x.status==='noted');if(sib)await genEmail(sib);
     }
+    // drain any leftover siblings from multi-business signs
+    let sib;while((sib=leads.find(x=>x.status==='noted'))){try{await genEmail(sib);}catch(e){sib.status='error';sib.err=e.message;saveLeads();}}
   }finally{processing=false;if(tab==='rev')ownerReview();else renderOwner();}
 }
 async function genEmail(l){if(l.glat&&l.glng&&!l.neighborhood){const g=await geocode(l.glat,l.glng);l.neighborhood=g.neighborhood;l.area=l.area||g.area;}l.status='researching';saveLeads();if(tab==='rev')ownerReview();Object.assign(l,await research(l));l.research_tries=1;
@@ -307,10 +397,12 @@ function ownerReview(){
   const weak=leads.filter(l=>l.status==='ready'&&l.email&&l.email_type==='generic'&&!['low','none'].includes(l.peo_fit));
   const lowfit=leads.filter(l=>l.status==='ready'&&l.email&&['low','none'].includes(l.peo_fit));
   const await_=leads.filter(l=>l.status==='ready'&&!l.email);
+  const attn=leads.filter(l=>['error','unreadable'].includes(l.status));
   const done=leads.filter(l=>['Sent','Filed','Skipped'].includes(l.status));
   let h='';
   if(!leads.length){$('#main').innerHTML='<div class="empty"><span class="em">🗂️</span>Nothing yet. Pull the inbox or snap on the Snap tab.</div>';return;}
   if(proc.length)h+='<div class="card"><span class="spinner"></span> Working on '+proc.length+'… <span class="muted">(read → email)</span></div>';
+  if(attn.length){h+='<div class="sec-title">⚠️ Needs attention ('+attn.length+')</div>';attn.forEach(l=>h+=attnCard(l));}
   if(need.length){h+='<div class="sec-title">📝 Needs a note ('+need.length+')</div>';need.forEach(l=>h+=noteCard(l));}
   h+='<div class="sec-title">✅ Ready to send ('+ready.length+')</div>';
   if(ready.length){h+='<div class="card"><button class="btn" onclick="approveAll()">🚀 Approve &amp; send all '+ready.length+'</button></div>';ready.forEach(l=>h+=readyCard(l));}else h+='<p class="muted" style="margin:0 2px 8px">None yet.</p>';
@@ -318,9 +410,21 @@ function ownerReview(){
   if(lowfit.length){h+='<div class="sec-title">⚠️ Low PEO fit — review first ('+lowfit.length+')</div><p class="muted" style="margin:0 2px 8px">Chains, franchises, public companies, govt — usually skip. These are kept OUT of "send all"; approve individually only if you know better.</p>';lowfit.forEach(l=>h+=readyCard(l));}
   h+='<div class="sec-title">✉️ Awaiting email ('+await_.length+')</div>';
   if(await_.length)await_.forEach(l=>h+=awaitCard(l));else h+='<p class="muted" style="margin:0 2px 8px">None.</p>';
-  if(done.length)h+='<details style="margin-top:14px"><summary>Archive · '+done.length+'</summary>'+done.map(l=>'<div class="card lead sent"><b>'+esc(l.company)+'</b> <span class="pill">'+esc(l.status)+'</span> <span class="muted">'+esc(l.source||'')+'</span></div>').join('')+'</details>';
+  if(done.length)h+='<details style="margin-top:14px"><summary>Archive · '+done.length+'</summary>'+done.map(l=>'<div class="card lead sent"><b>'+esc(l.company)+'</b> <span class="pill">'+esc(l.status)+'</span> <span class="muted">'+esc(l.source||'')+'</span>'+(l.ot_ok===false?'<div class="warn">⚠️ Didn\'t reach OT <button class="btn ghost sm" onclick="resendOT(\''+l.id+'\')">↻ Resend</button></div>':'')+'</div>').join('')+'</details>';
   $('#main').innerHTML=h;
 }
+function attnCard(l){const why=l.status==='unreadable'?'Couldn\'t read a business from that photo.':('Hit a snag: '+esc(l.err||'unknown error'));
+  return '<div class="card lead" style="border-left-color:var(--danger)"><p class="big">'+esc(l.company||'Unknown business')+'</p>'+metaR(l)+'<div class="warn">'+why+'</div>'+
+  (l.company?'':'<label style="margin-top:8px">Remember who it was? Type the name</label><input id="fx-'+l.id+'" placeholder="Company name">')+
+  '<div class="row" style="margin-top:10px"><button class="btn sm" onclick="retryLead(\''+l.id+'\')">♻️ Retry</button><button class="btn ghost sm" onclick="skipLead(\''+l.id+'\')">🗑️ Discard</button></div></div>'}
+async function retryLead(id){const l=leads.find(x=>x.id===id);if(!l)return;
+  const inp=document.getElementById('fx-'+id);const nm=(inp&&inp.value||'').trim();if(nm)l.company=nm;
+  if(!l.company){toast('Type the business name first');return;}
+  if(navigator.onLine===false){toast('⚠️ No signal — try again in a bit',4000);return;}
+  l.err='';l.contact_title=l.contact_title||'Owner';l.status='researching';saveLeads();ownerReview();
+  try{await genEmail(l);}catch(e){l.status='error';l.err=e.message;saveLeads();}
+  ownerReview();}
+async function resendOT(id){const l=leads.find(x=>x.id===id);if(!l)return;toast('↻ Resending…');await pushOT(l);saveLeads();ownerReview();toast(l.ot_ok===false?'⚠️ Still couldn\'t reach OT':'✅ Sent to OT');}
 function srcPill(l){return l.source?'<span class="pill">👤 '+esc(l.source)+'</span>':''}
 function metaR(l){return '<div class="meta">'+(l.trade?'<span class="pill">'+esc(l.trade)+'</span>':'')+(l.neighborhood?'<span class="pill">📍 '+esc(l.neighborhood)+'</span>':'')+srcPill(l)+'</div>'}
 function noteCard(l){return '<div class="card lead note"><p class="big">'+esc(l.company)+'</p>'+metaR(l)+'<label style="margin-top:8px">Why reaching out? (required)</label><textarea id="nt-'+l.id+'">'+esc(l.note||'')+'</textarea><div class="row" style="margin-top:8px"><button class="btn sm" onclick="submitNote(\''+l.id+'\')">✍️ Generate</button><button class="btn ghost sm" onclick="skipLead(\''+l.id+'\')">Skip</button></div></div>'}
@@ -340,13 +444,15 @@ function backupLead(l){try{fetch(API+'/backup',{method:'POST',headers:ownerHdr()
 function delBackup(id){try{fetch(API+'/backup',{method:'POST',headers:ownerHdr(),body:JSON.stringify({op:'del',id})}).catch(()=>{});}catch(e){}}
 async function restoreBackups(){if(!owner.pass){toast('Set your passcode first');return}toast('♻️ Checking server…');try{const r=await fetch(API+'/backup',{method:'POST',headers:ownerHdr(),body:JSON.stringify({op:'list'})});const j=await r.json();if(!r.ok||j.error)throw new Error(j.error||'failed');let back=0;(j.leads||[]).forEach(s=>{if(leads.some(l=>l.id===s.id))return;leads.unshift(s);back++;});if(back){saveLeads();renderOwner();}toast(back?('♻️ Restored '+back+' photo'+(back>1?'s':'')):'Nothing to restore — all in sync');}catch(e){toast('⚠️ '+e.message,4000);}}
 async function pruneBackups(){const d=parseInt(prompt('Delete server backups older than how many days? (approved/sent ones are already gone)','30')||'',10);if(!d||d<1)return;try{const r=await fetch(API+'/backup',{method:'POST',headers:ownerHdr(),body:JSON.stringify({op:'prune',days:d})});const j=await r.json();toast(j.error?('⚠️ '+j.error):('🧹 Cleared '+(j.removed||0)+' old backup'+((j.removed||0)===1?'':'s')));}catch(e){toast('⚠️ '+e.message,4000);}}
-async function approveOne(id){const l=leads.find(x=>x.id===id);if(!l)return;l.status='Sent';saveLeads();await pushOT(l);if(owner.send_method==='instantly')await enrollInstantly(l);await clearSrv(l);ownerReview();toast('✅ Sent: '+l.company);}
-async function approveAll(){const r=leads.filter(l=>l.status==='ready'&&l.email&&l.email_type!=='generic'&&!['low','none'].includes(l.peo_fit)&&!dupeOf(l));if(!r.length)return;if(!confirm('Send to all '+r.length+'?'))return;toast('🚀 Sending…');for(const l of r){l.status='Sent';saveLeads();await pushOT(l);if(owner.send_method==='instantly')await enrollInstantly(l);await clearSrv(l);}ownerReview();toast('✅ Sent '+r.length);}
+async function approveOne(id){if(navigator.onLine===false){toast('⚠️ No signal — try again in a bit',4000);return;}const l=leads.find(x=>x.id===id);if(!l)return;l.status='Sent';saveLeads();await pushOT(l);if(owner.send_method==='instantly')await enrollInstantly(l);await clearSrv(l);ownerReview();toast('✅ Sent: '+l.company);}
+async function approveAll(){if(navigator.onLine===false){toast('⚠️ No signal — try again in a bit',4000);return;}const r=leads.filter(l=>l.status==='ready'&&l.email&&l.email_type!=='generic'&&!['low','none'].includes(l.peo_fit)&&!dupeOf(l));if(!r.length)return;if(!confirm('Send to all '+r.length+'?'))return;toast('🚀 Sending…');for(const l of r){l.status='Sent';saveLeads();await pushOT(l);if(owner.send_method==='instantly')await enrollInstantly(l);await clearSrv(l);}ownerReview();toast('✅ Sent '+r.length);}
 async function skipLead(id){const l=leads.find(x=>x.id===id);if(!l)return;l.status='Skipped';saveLeads();await clearSrv(l);ownerReview();}
 async function pushOT(l){
   if(!owner.ot_webhook)return;const draft=l.email_draft||'';const sm=draft.match(/^\s*subject:\s*(.+)$/im);
   const payload={company:l.company,companyName:l.company,name:l.company,phone:l.phone||'',website:l.website||'',trade:l.trade||'',contact_title:l.contact_title||'Owner',neighborhood:l.neighborhood||'',area:l.area||'',source_type:l.source_type||'',signage:l.signage_text||'',services:(l.services||[]).join(', '),scene_notes:l.note||'',what_i_saw:[(l.source_type||'').replace('_',' '),l.signage_text,(l.services||[]).join(', ')].filter(Boolean).join(' — '),captured:l.captured||'',email_draft:draft,email_subject:sm?sm[1].trim():('Reaching out — '+l.company),email_body:draft.replace(/^\s*subject:\s*.+$/im,'').trim(),email:l.email||'',contact_name:l.contact_name||'',auto_send:(l.email&&owner.send_method!=='instantly')?'yes':'no',scout:l.source||'',source:l.source||'',voice:l.voice||'',tag:'field-scout'};
-  try{await fetch(owner.ot_webhook,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});}catch(e){try{await fetch(owner.ot_webhook,{method:'POST',mode:'no-cors',headers:{'content-type':'text/plain'},body:JSON.stringify(payload)});}catch(e2){}}
+  try{const r=await fetch(owner.ot_webhook,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});l.ot_ok=r.ok;}
+  catch(e){try{await fetch(owner.ot_webhook,{method:'POST',mode:'no-cors',headers:{'content-type':'text/plain'},body:JSON.stringify(payload)});l.ot_ok=true;}catch(e2){l.ot_ok=false;}}
+  saveLeads();
 }
 async function enrollInstantly(l){
   if(!owner.instantly_campaign){toast('Set your Instantly campaign ID in Setup');return;}
@@ -365,7 +471,8 @@ function ownerSetup(){
     '<label>Send via</label><select id="o_method"><option value="ot">OT (your domain) — for now</option><option value="instantly">Instantly (warmed inboxes)</option></select>'+
     '<label>Instantly campaign ID (when warm)</label><input id="o_camp" value="'+esc(owner.instantly_campaign||'')+'" placeholder="paste your Instantly campaign id">'+
     '<div class="hint">Switch to Instantly only after warmup. OT still files the contact; Instantly does the sending. Also set INSTANTLY_API_KEY in Netlify env.</div></div>'+
-    '<button class="btn" onclick="saveOwner()">💾 Save</button><button class="btn ghost" style="margin-top:10px" onclick="switchRole()">Switch role</button>';
+    '<button class="btn" onclick="saveOwner()">💾 Save</button><button class="btn ghost" style="margin-top:10px" onclick="switchRole()">Switch role</button>'+
+    '<p class="hint" style="text-align:center;margin-top:16px">Field Scout Network v5.0 · 🎤 field notes + 💡 ideas</p>';
   $('#o_voice').value=owner.voice||'smalltown';
   if(owner.send_method)$('#o_method').value=owner.send_method;
 }

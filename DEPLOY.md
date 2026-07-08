@@ -25,3 +25,8 @@ Scouts snap+note all day → you open **Snap → Pull team inbox** → it reads 
 
 ## To use the scout's source for commission in OT
 The lead already carries `scout` / `source`. To tag/attribute it in OT, add one step to your "Field Scout Intake" workflow later (e.g., Add Tag `src-{{inboundWebhookRequest.scout}}` or map it to a field). Small add — current workflow still works without it.
+
+## v5.0 update (July 2026) — 🎤 field notes + 💡 ideas
+- New file: `netlify/functions/note.mjs` (voice/text notes + idea storage). No new env vars — reuses `OWNER_PASSCODE`.
+- Redeploy = re-upload `index.html` + `netlify/functions/note.mjs` to the GitHub repo (Add file → Upload files) → Netlify auto-redeploys.
+- Then set up the Siri Shortcut: see `FIELD-NOTE-SHORTCUT.md`.
