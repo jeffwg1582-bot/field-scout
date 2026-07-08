@@ -362,7 +362,12 @@ WHAT WE DO — follow exactly:
 Rules: ${l.contact_name?'greet '+l.contact_name+' by first name':'neutral greeting "Hi there", never invent a name'}; 90 words max; one soft ask for a quick call${s.calendar?' ('+s.calendar+')':''}; sign ${s.name||''}${s.phone?', '+s.phone:''}. Return ONLY: a "Subject:" line then the body.`;
   return tOf(await callRaw({model:RESEARCH_MODEL,max_tokens:700,messages:[{role:'user',content:[{type:'text',text:prompt}]}]})).trim();}
 
-async function maybeProcess(){if(navigator.onLine!==false&&leads.some(l=>l.status==='queued'))processQueue();}
+async function maybeProcess(){if(navigator.onLine!==false&&leads.some(l=>['queued','noted'].includes(l.status)))processQueue();}
+// if the app was closed mid-processing, leads freeze in a transient status forever — un-stick them on open
+function recoverStuck(){let n=0;leads.forEach(l=>{
+  if(l.status==='reading'){if(l.img){l.status='queued';}else{l.status='error';l.err='interrupted mid-read — photo already discarded';}n++;}
+  else if(['researching','drafting'].includes(l.status)){if(l.company){l.status='noted';}else{l.status='error';l.err='interrupted before the business was identified';}n++;}
+});if(n)saveLeads();return n;}
 async function processQueue(){
   if(processing)return;
   if(navigator.onLine===false){toast('⚠️ No signal — your snaps are banked, will process when you\'re back',4000);return;}
@@ -481,6 +486,7 @@ function switchRole(){if(!confirm('Switch role on this device?'))return;role='';
 
 /* ---------- init ---------- */
 render();getLocation();
+if(role==='owner'&&recoverStuck()){toast('♻️ Resuming interrupted leads…');maybeProcess();}
 </script>
 </body>
 </html>
