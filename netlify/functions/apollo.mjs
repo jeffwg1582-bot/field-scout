@@ -23,11 +23,12 @@ export default async (req) => {
   try {
     // 1) free search for the owner/decision-maker at this company
     const sBody = {
-      person_titles: ['owner', 'president', 'ceo', 'founder', 'co-founder', 'general manager', 'principal', 'partner', 'managing partner'],
-      q_keywords: company, per_page: 5,
+      person_titles: ['owner', 'president', 'ceo', 'founder', 'co-founder', 'general manager', 'principal', 'partner', 'managing partner', 'vice president', 'director'],
+      q_keywords: company, per_page: 10,
     };
     if (b.domain) sBody.q_organization_domains_list = [String(b.domain).replace(/^https?:\/\//, '').replace(/\/.*$/, '')];
-    if (b.area) sBody.organization_locations = [b.area];
+    // Only filter by location if it looks like a real "City, ST" — a granular neighborhood (e.g. "Prospect Creek") over-filters to zero.
+    if (b.area && /,\s*[A-Za-z]{2,}/.test(b.area)) sBody.organization_locations = [b.area];
 
     const sr = await fetch(BASE + '/mixed_people/search', { method: 'POST', headers: H, body: JSON.stringify(sBody) });
     if (!sr.ok) return json({ found: false }, 200);
@@ -35,11 +36,20 @@ export default async (req) => {
     const people = sj.people || sj.contacts || [];
     if (!people.length) return json({ found: false }, 200);
 
-    // best match = person whose org name resembles the snapped company; require a real overlap before spending a credit
+    // Best match by TOKEN OVERLAP — a sign name ("Altex") rarely equals the registered name
+    // ("Altex Computers & Electronics, LTD."), so score on shared words, not a strict prefix.
     const cn = norm(company);
-    let pick = people.find(p => p.organization && cn && norm(p.organization.name).includes(cn.slice(0, Math.min(8, cn.length))));
-    if (!pick) pick = people.find(p => p.organization && cn && norm(p.organization.name).slice(0, 6) === cn.slice(0, 6));
-    if (!pick) return json({ found: false, note: 'no confident company match' }, 200);
+    const STOP = ['the', 'and', 'llc', 'inc', 'ltd', 'co', 'company', 'corp', 'group', 'services', 'service'];
+    const toks = (company.toLowerCase().match(/[a-z0-9]{3,}/g) || []).filter(t => !STOP.includes(t));
+    const score = (p) => {
+      const on = norm(p.organization && p.organization.name || ''); if (!on) return 0;
+      if (on === cn) return 1000;
+      if (on.includes(cn) || cn.includes(on)) return 500;
+      let s = 0; for (const t of toks) if (on.includes(t)) s += t.length; return s;
+    };
+    let pick = null, best = 0;
+    for (const p of people) { const s = score(p); if (s > best) { best = s; pick = p; } }
+    if (!pick || best < 3) return json({ found: false, note: 'no confident company match' }, 200);
 
     const org = pick.organization || {};
     const emp = Number(org.estimated_num_employees || 0);

@@ -6,46 +6,48 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Field Scout">
-<meta name="theme-color" content="#0b3d2e">
+<meta name="theme-color" content="#0c2f6f">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%230b3d2e'/%3E%3Ctext x='90' y='120' font-size='90' text-anchor='middle'%3E%F0%9F%93%B8%3C/text%3E%3C/svg%3E">
 <title>Field Scout</title>
 <!-- v5.0 — field notes + ideas -->
 
 <style>
-  :root{--bg:#0b1f17;--card:#11271d;--line:#1f4232;--green:#1db876;--text:#eaf3ee;--muted:#8fb0a1;--accent:#ffd166;--danger:#ff6b6b;--radius:16px}
+  :root{--bg:#0a1730;--card:#0f2447;--line:#20396b;--green:#2f6fed;--navy:#0c2f6f;--red:#e0313a;--text:#eaf1fb;--muted:#93a7c9;--accent:#f5b301;--danger:#e0313a;--radius:16px}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
   body{padding:env(safe-area-inset-top) 0 0 0;min-height:100vh}
-  header{position:sticky;top:0;z-index:20;background:linear-gradient(180deg,#0b3d2e,#0b1f17);padding:14px 16px 12px;border-bottom:1px solid var(--line)}
+  header{position:sticky;top:0;z-index:20;background:linear-gradient(180deg,#0c2f6f,#0a1730);padding:14px 16px 12px;border-bottom:2px solid var(--red)}
+  .brandtag{flex:none;font-size:11px;font-weight:800;letter-spacing:1px;color:#fff;background:var(--red);padding:4px 9px;border-radius:6px;white-space:nowrap}
   header h1{margin:0;font-size:20px;display:flex;align-items:center;gap:8px}
   header .sub{font-size:12px;color:var(--muted);margin-top:2px}
   main{padding:16px;max-width:680px;margin:0 auto;padding-bottom:90px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:14px}
   label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
-  input,select,textarea{width:100%;background:#0a1812;border:1px solid var(--line);color:var(--text);border-radius:10px;padding:11px 12px;font-size:15px;font-family:inherit}
+  input,select,textarea{width:100%;background:#0a1730;border:1px solid var(--line);color:var(--text);border-radius:10px;padding:11px 12px;font-size:15px;font-family:inherit}
   textarea{min-height:70px;resize:vertical;line-height:1.45}textarea.op{min-height:120px}
-  .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;border:none;border-radius:12px;padding:15px;font-size:16px;font-weight:700;background:var(--green);color:#04140d;margin-top:6px}
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;border:none;border-radius:12px;padding:15px;font-size:16px;font-weight:700;background:var(--green);color:#fff;margin-top:6px}
+  .btn.primary-red{background:var(--red);color:#fff}
   .btn:active{transform:scale(.98)}.btn:disabled{opacity:.45}
-  .btn.secondary{background:#15311f;color:var(--text);border:1px solid var(--line)}
+  .btn.secondary{background:#14315e;color:var(--text);border:1px solid var(--line)}
   .btn.ghost{background:none;color:var(--green);border:1px solid var(--line)}
   .btn.sm{padding:9px 12px;font-size:13px;width:auto;border-radius:9px}
   .row{display:flex;gap:8px;flex-wrap:wrap}.row .btn{flex:1}
-  .pill{display:inline-block;background:#15311f;border:1px solid var(--line);color:var(--green);font-size:11px;padding:3px 9px;border-radius:999px;margin:3px 4px 0 0}
+  .pill{display:inline-block;background:#14315e;border:1px solid var(--line);color:var(--green);font-size:11px;padding:3px 9px;border-radius:999px;margin:3px 4px 0 0}
   .muted{color:var(--muted);font-size:13px;line-height:1.5}.big{font-size:17px;font-weight:700;margin:0}
   .snapbtn{border:2px dashed var(--line);border-radius:var(--radius);padding:38px 16px;text-align:center;color:var(--muted)}
   .snapbtn .em{font-size:50px;display:block;margin-bottom:8px}
   .counter{font-size:46px;font-weight:800;color:var(--green);text-align:center;line-height:1}
-  .spinner{width:16px;height:16px;border:3px solid #1db87644;border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:-2px}
+  .spinner{width:16px;height:16px;border:3px solid #2f6fed44;border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:-2px}
   @keyframes spin{to{transform:rotate(360deg)}}
-  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#04140d;border:1px solid var(--green);color:var(--text);padding:11px 16px;border-radius:10px;font-size:14px;z-index:50;max-width:90%;text-align:center;opacity:0;transition:opacity .25s;pointer-events:none}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#081a3a;border:1px solid var(--green);color:var(--text);padding:11px 16px;border-radius:10px;font-size:14px;z-index:50;max-width:90%;text-align:center;opacity:0;transition:opacity .25s;pointer-events:none}
   .toast.show{opacity:1}
   .sec-title{font-size:13px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);margin:18px 2px 8px}
   .kv{display:flex;justify-content:space-between;gap:10px;font-size:14px;padding:5px 0;border-bottom:1px solid #14291e}.kv b{color:var(--muted);font-weight:600}
   .ok{color:var(--green)}.warn{background:#2a1d0c;border:1px solid #6b4f1a;color:#ffd166;font-size:12px;padding:10px 12px;border-radius:10px;margin-top:8px;line-height:1.5}
-  .lead{border-left:4px solid var(--green)}.lead.note{border-left-color:var(--accent)}.lead.sent{border-left-color:#2c5a44;opacity:.7}
+  .lead{border-left:4px solid var(--green)}.lead.note{border-left-color:var(--accent)}.lead.sent{border-left-color:#2c477a;opacity:.7}
   .empty{text-align:center;color:var(--muted);padding:34px 16px}.empty .em{font-size:42px;display:block;margin-bottom:10px}
   .hint{font-size:11px;color:var(--muted);margin-top:4px}
-  .tabbar{position:fixed;bottom:0;left:0;right:0;z-index:30;display:flex;background:#0c241a;border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+  .tabbar{position:fixed;bottom:0;left:0;right:0;z-index:30;display:flex;background:#0b1d3a;border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
   .tabbar button{flex:1;background:none;border:none;color:var(--muted);padding:10px 4px 12px;font-size:11px;display:flex;flex-direction:column;align-items:center;gap:3px;position:relative}
   .tabbar button .ic{font-size:21px}.tabbar button.active{color:var(--green)}
   .badge{position:absolute;top:4px;right:50%;transform:translateX(18px);background:var(--accent);color:#04140d;font-size:10px;font-weight:800;border-radius:999px;padding:0 5px;min-width:16px;text-align:center}
@@ -54,7 +56,7 @@
 </style>
 </head>
 <body>
-<header><h1>📸 Field Scout</h1><div class="sub" id="sub">Photo → lead</div></header>
+<header><div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><h1>📸 Field Scout</h1><span class="brandtag">MY&nbsp;PEO&nbsp;PROS</span></div><div class="sub" id="sub">Photo → lead</div></header>
 <main id="main"></main>
 <nav class="tabbar" id="tabbar" style="display:none"></nav>
 <div class="toast" id="toast"></div>
@@ -124,6 +126,7 @@ function renderScout(){
     '<div class="hint" style="text-align:center">📷 = live camera (pauses music) · 🖼️ = from your camera roll (music keeps playing, multi-select)</div>'+
     '<input id="file" type="file" accept="image/*" capture="environment" multiple style="display:none">'+
     '<input id="fileup" type="file" accept="image/*" multiple style="display:none"></div>';
+  if(!LS.get('sentCount',0)&&!outbox.length){ h+='<div class="card"><p class="big">New here? 3 steps 👋</p><p class="muted"><b>1.</b> Spot a business — a truck, storefront, billboard, yard sign — and tap <b>📷 Take photo</b> (or <b>🖼️ Upload</b> from your camera roll).<br><br><b>2.</b> A note is optional. Snap and keep moving — the app reads the photo for context.<br><br><b>3.</b> Tap <b>📤 Send all</b> when you\'ve got a batch. That\'s it — every lead is credited to you.</p></div>'; }
   if(outbox.length){ h+='<div class="sec-title">To send ('+outbox.length+')</div>';
     h+='<div class="card"><label>Optional note for all (leave blank — it reads the photo)</label><input id="allnote" placeholder="e.g. all along I-35 today"><button class="btn" onclick="sendAll()">📤 Send all '+outbox.length+'</button></div>';
     outbox.forEach(o=>{ h+=
@@ -477,7 +480,7 @@ function ownerSetup(){
     '<label>Instantly campaign ID (when warm)</label><input id="o_camp" value="'+esc(owner.instantly_campaign||'')+'" placeholder="paste your Instantly campaign id">'+
     '<div class="hint">Switch to Instantly only after warmup. OT still files the contact; Instantly does the sending. Also set INSTANTLY_API_KEY in Netlify env.</div></div>'+
     '<button class="btn" onclick="saveOwner()">💾 Save</button><button class="btn ghost" style="margin-top:10px" onclick="switchRole()">Switch role</button>'+
-    '<p class="hint" style="text-align:center;margin-top:16px">Field Scout Network v5.0 · 🎤 field notes + 💡 ideas</p>';
+    '<p class="hint" style="text-align:center;margin-top:16px">Field Scout Network v5.1 · a My PEO Pros tool</p>';
   $('#o_voice').value=owner.voice||'smalltown';
   if(owner.send_method)$('#o_method').value=owner.send_method;
 }
